@@ -113,8 +113,8 @@ export class LogitechHIDPPProtocol implements IMouseProtocol {
 
       console.log(`✅ 已连接: ${this.deviceInfo.productName} (VID: 0x${this.deviceInfo.vendorId.toString(16).toUpperCase()}, PID: 0x${this.deviceInfo.productId.toString(16).toUpperCase()})`);
       console.log(`   Collections: ${this.device.collections.length}`);
-      this.device.collections.forEach((c, i) => {
-        console.log(`   [${i}] UsagePage=0x${c.usagePage.toString(16)} Usage=0x${c.usage.toString(16)}`);
+      this.device.collections.forEach((c: HIDCollectionInfo, i: number) => {
+        console.log(`   [${i}] UsagePage=0x${(c.usagePage ?? 0).toString(16)} Usage=0x${(c.usage ?? 0).toString(16)}`);
       });
 
       return true;
@@ -128,7 +128,7 @@ export class LogitechHIDPPProtocol implements IMouseProtocol {
    * 检查设备是否有厂商专用接口 (UsagePage=0xFF00)
    */
   private hasVendorInterface(device: HIDDevice): boolean {
-    return device.collections.some(c =>
+    return device.collections.some((c: HIDCollectionInfo) =>
       c.usagePage === 0xFF00 &&
       c.outputReports &&
       c.outputReports.length > 0

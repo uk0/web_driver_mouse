@@ -7,7 +7,7 @@ services:
       dockerfile: Dockerfile
     container_name: razer-webhid-driver
     ports:
-      - "3000:3000"
+      - "3004:3000"
     environment:
       - NODE_ENV=production
       - PORT=3000
@@ -19,20 +19,3 @@ services:
       retries: 3
       start_period: 5s
 
-  # Optional: HTTPS version with self-signed certificates
-  razer-webhid-https:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: razer-webhid-driver-https
-    ports:
-      - "3443:3443"
-    environment:
-      - NODE_ENV=production
-      - PORT=3000
-      - HTTPS_PORT=3443
-    volumes:
-      - ./certs:/app/certs:ro
-    restart: unless-stopped
-    profiles:
-      - https

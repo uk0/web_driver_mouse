@@ -1,34 +1,7 @@
-version: '3.8'
-
 services:
   web-mouse-driver:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: .
     container_name: web-mouse-driver
     ports:
-      - "8080:80"
+      - "3000:3000"
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-    labels:
-      - "app.name=web-mouse-driver"
-      - "app.description=Web Mouse Driver for Logitech devices"
-
-  # Optional: Development mode with hot reload
-  dev:
-    image: node:20-alpine
-    container_name: web-mouse-driver-dev
-    working_dir: /app
-    volumes:
-      - .:/app
-      - /app/node_modules
-    ports:
-      - "5173:5173"
-    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
-    profiles:
-      - dev

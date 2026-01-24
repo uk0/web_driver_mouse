@@ -71,7 +71,7 @@ export class USBMouseProtocol implements IMouseProtocol {
 
       // 查找 HID 接口
       const hidInterface = this.device.configuration?.interfaces.find(
-        iface => iface.alternate.interfaceClass === 0x03 // HID Class
+        (iface: USBInterface) => iface.alternate.interfaceClass === 0x03 // HID Class
       );
 
       if (hidInterface) {
@@ -88,7 +88,7 @@ export class USBMouseProtocol implements IMouseProtocol {
         vendorId: this.device.vendorId,
         productId: this.device.productId,
         productName: this.device.productName || 'Unknown Mouse',
-        serialNumber: this.device.serialNumber,
+        serialNumber: this.device.serialNumber ?? undefined,
       };
 
       console.log(`已连接 (USB): ${this.deviceInfo.productName}`);
@@ -213,7 +213,7 @@ export class USBMouseProtocol implements IMouseProtocol {
       request: USB_REQUEST.SET_REPORT,
       value: wValue,
       index: this.interfaceNumber,
-    }, data);
+    }, data as BufferSource);
   }
 
   async receiveControlTransfer(reportId: number, length: number): Promise<Uint8Array> {

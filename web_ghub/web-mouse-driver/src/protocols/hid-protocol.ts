@@ -230,7 +230,7 @@ export class HIDMouseProtocol implements IMouseProtocol {
     if (!this.device || !this.device.opened) {
       throw new Error('设备未连接');
     }
-    await this.device.sendFeatureReport(reportId, data);
+    await this.device.sendFeatureReport(reportId, data as BufferSource);
   }
 
   // 接收原始报告 (用于调试)
