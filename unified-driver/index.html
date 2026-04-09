@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Web Mouse Driver</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="container">
+
+  <!-- ===================== Header ===================== -->
+  <header class="header">
+    <h1>Web Mouse Driver</h1>
+    <p class="subtitle">Logitech &amp; Razer | WebHID</p>
+  </header>
+
+  <!-- ===================== Card 1: Device Connection ===================== -->
+  <section class="card" id="connection-card">
+    <h2>设备连接</h2>
+
+    <div class="status-row">
+      <div class="status-dot" id="status-dot"></div>
+      <span class="status-text" id="status-text">未连接</span>
+    </div>
+
+    <div class="btn-group mb-10">
+      <button class="btn" id="btn-connect-logitech">连接 Logitech 鼠标</button>
+      <button class="btn" id="btn-connect-razer">连接 Razer 鼠标</button>
+    </div>
+
+    <div class="btn-group mb-15">
+      <button class="btn btn-danger" id="btn-disconnect" disabled>断开连接</button>
+    </div>
+
+    <!-- Device Info (hidden until connected) -->
+    <div class="hidden" id="device-info">
+      <div class="section-divider"></div>
+      <div class="device-info" style="display:grid">
+        <div class="info-item">
+          <label>设备名称</label>
+          <span id="info-name">—</span>
+        </div>
+        <div class="info-item">
+          <label>VID</label>
+          <span id="info-vid">—</span>
+        </div>
+        <div class="info-item">
+          <label>PID</label>
+          <span id="info-pid">—</span>
+        </div>
+        <div class="info-item">
+          <label>序列号</label>
+          <span id="info-serial">—</span>
+        </div>
+        <div class="info-item" style="grid-column: span 2">
+          <label>品牌</label>
+          <span id="info-brand">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Saved devices dropdown -->
+    <div class="saved-devices mt-15" id="saved-devices-section">
+      <div class="section-divider"></div>
+      <label class="text-secondary mb-10" style="display:block;font-size:0.9em">已保存的设备配置</label>
+      <div class="flex gap-10" style="align-items:center">
+        <select id="saved-devices-select" style="flex:1">
+          <option value="">— 无保存的配置 —</option>
+        </select>
+      </div>
+      <div class="mt-10">
+        <button class="btn btn-sm btn-secondary" id="btn-apply-saved" disabled>应用保存的配置</button>
+      </div>
+    </div>
+
+    <div class="info-msg mt-10" id="config-restored-msg">检测到保存的配置，已自动填充参数。点击对应按钮手动应用。</div>
+  </section>
+
+  <!-- ===================== Card 2: DPI Settings ===================== -->
+  <section class="card" id="dpi-card">
+    <h2>DPI 设置</h2>
+
+    <!-- Logitech preset grid -->
+    <div class="dpi-grid mb-15" id="dpi-presets">
+      <button class="dpi-btn" data-dpi="400">400</button>
+      <button class="dpi-btn" data-dpi="800">800</button>
+      <button class="dpi-btn" data-dpi="1600">1600</button>
+      <button class="dpi-btn" data-dpi="3200">3200</button>
+      <button class="dpi-btn" data-dpi="6400">6400</button>
+    </div>
+
+    <!-- Custom DPI input (shared) -->
+    <div class="flex gap-10 mb-15" style="align-items:center">
+      <label class="text-secondary" style="white-space:nowrap;font-size:0.9em">自定义 DPI</label>
+      <input type="number" class="input-field" id="dpi-custom-input" min="100" max="30000" step="50" value="800" placeholder="800" style="max-width:160px">
+    </div>
+
+    <!-- Razer XY DPI controls (hidden for Logitech) -->
+    <div id="dpi-xy-controls" class="hidden">
+      <div class="section-divider"></div>
+
+      <div class="checkbox-group mb-15">
+        <label class="toggle">
+          <input type="checkbox" id="dpi-xy-split-toggle">
+          <span class="toggle-slider"></span>
+        </label>
+        <label>分别设置 X / Y 轴 DPI</label>
+      </div>
+
+      <div id="dpi-xy-sliders">
+        <div class="flex gap-10 mb-10" style="align-items:center">
+          <label class="text-secondary" style="min-width:24px">X</label>
+          <input type="range" class="slider" id="dpi-x-slider" min="100" max="30000" step="50" value="800" style="flex:1">
+          <input type="number" class="input-field" id="dpi-x-input" min="100" max="30000" step="50" value="800" style="max-width:100px">
+        </div>
+        <div class="flex gap-10 mb-10 hidden" id="dpi-y-row" style="align-items:center">
+          <label class="text-secondary" style="min-width:24px">Y</label>
+          <input type="range" class="slider" id="dpi-y-slider" min="100" max="30000" step="50" value="800" style="flex:1">
+          <input type="number" class="input-field" id="dpi-y-input" min="100" max="30000" step="50" value="800" style="max-width:100px">
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-15">
+      <button class="btn" id="btn-apply-dpi" disabled>应用 DPI</button>
+    </div>
+  </section>
+
+  <!-- ===================== Card 3: Polling Rate ===================== -->
+  <section class="card" id="polling-card">
+    <h2>回报率</h2>
+
+    <div class="polling-grid mb-15" id="polling-grid">
+      <button class="polling-btn" data-rate="125">125 Hz</button>
+      <button class="polling-btn" data-rate="250">250 Hz</button>
+      <button class="polling-btn" data-rate="500">500 Hz</button>
+      <button class="polling-btn" data-rate="1000">1000 Hz</button>
+      <button class="polling-btn polling-btn-extended" data-rate="2000" style="display:none">2000 Hz</button>
+      <button class="polling-btn polling-btn-extended" data-rate="4000" style="display:none">4000 Hz</button>
+      <button class="polling-btn polling-btn-extended" data-rate="8000" style="display:none">8000 Hz</button>
+    </div>
+
+    <button class="btn" id="btn-apply-polling" disabled>应用回报率</button>
+  </section>
+
+  <!-- ===================== Card 4: Battery Status ===================== -->
+  <section class="card" id="battery-card">
+    <h2>电池状态</h2>
+
+    <div class="flex gap-15 mb-15" style="align-items:center">
+      <div class="battery-bar-container" style="flex:1">
+        <div class="battery-bar" id="battery-bar" style="width:0%"></div>
+      </div>
+      <div class="battery-level" id="battery-percent">—%</div>
+    </div>
+
+    <div class="text-secondary mb-15" id="battery-status" style="font-size:0.95em">状态：未知</div>
+
+    <button class="btn" id="btn-refresh-battery" disabled>刷新电量</button>
+  </section>
+
+  <!-- ===================== Card 5: Mouse Rotation (Razer only) ===================== -->
+  <section class="card hidden" id="rotation-card">
+    <h2>鼠标旋转角度</h2>
+
+    <div class="rotation-control mb-15">
+      <button class="rotation-btn" id="btn-rotation-minus">&minus;</button>
+      <input type="range" class="slider" id="rotation-slider" min="-44" max="44" step="1" value="0" style="flex:1">
+      <div class="rotation-value" id="rotation-value">0&deg;</div>
+      <button class="rotation-btn" id="btn-rotation-plus">+</button>
+    </div>
+
+    <button class="btn" id="btn-apply-rotation" disabled>应用旋转角度</button>
+  </section>
+
+  <!-- ===================== Card 6: Communication Log ===================== -->
+  <section class="card" id="log-card">
+    <div class="flex-between mb-10">
+      <h2 style="margin-bottom:0;padding-bottom:0;border-bottom:none">通信日志</h2>
+      <button class="btn btn-sm btn-secondary" id="btn-clear-log">清除</button>
+    </div>
+    <div class="console" id="log-area"></div>
+  </section>
+
+  <!-- ===================== Footer ===================== -->
+  <footer class="footer">
+    <div>Web Mouse Driver v2.0 | WebHID</div>
+    <div class="browser-note">需要 Chrome 89+ 或 Edge 89+</div>
+  </footer>
+
+</div>
+
+<!-- ===================== Application Logic ===================== -->
+<script type="module">
+import { RazerProtocol } from './js/protocols/razer-protocol.js';
+import { LogitechHIDPP } from './js/protocols/logitech-hidpp.js';
+import { ConfigStore } from './js/config-store.js';
+
+/* ------------------------------------------------------------------
+ *  App State
+ * ---------------------------------------------------------------- */
+let protocol = null;      // RazerProtocol | LogitechHIDPP
+let brand = null;         // 'logitech' | 'razer'
+let deviceInfo = null;    // { name, vendorId, productId, serialNumber }
+const configStore = new ConfigStore();
+
+let selectedDPI = 800;
+let selectedDpiX = 800;
+let selectedDpiY = 800;
+let selectedPollingRate = null;
+let selectedRotation = 0;
+
+/* ------------------------------------------------------------------
+ *  DOM References
+ * ---------------------------------------------------------------- */
+const $statusDot         = document.getElementById('status-dot');
+const $statusText        = document.getElementById('status-text');
+const $btnConnectLogi    = document.getElementById('btn-connect-logitech');
+const $btnConnectRazer   = document.getElementById('btn-connect-razer');
+const $btnDisconnect     = document.getElementById('btn-disconnect');
+const $deviceInfo        = document.getElementById('device-info');
+const $infoName          = document.getElementById('info-name');
+const $infoVid           = document.getElementById('info-vid');
+const $infoPid           = document.getElementById('info-pid');
+const $infoSerial        = document.getElementById('info-serial');
+const $infoBrand         = document.getElementById('info-brand');
+const $savedSelect       = document.getElementById('saved-devices-select');
+const $btnApplySaved     = document.getElementById('btn-apply-saved');
+const $configRestoredMsg = document.getElementById('config-restored-msg');
+
+const $dpiPresets        = document.getElementById('dpi-presets');
+const $dpiCustomInput    = document.getElementById('dpi-custom-input');
+const $dpiXYControls     = document.getElementById('dpi-xy-controls');
+const $dpiSplitToggle    = document.getElementById('dpi-xy-split-toggle');
+const $dpiXSlider        = document.getElementById('dpi-x-slider');
+const $dpiXInput         = document.getElementById('dpi-x-input');
+const $dpiYRow           = document.getElementById('dpi-y-row');
+const $dpiYSlider        = document.getElementById('dpi-y-slider');
+const $dpiYInput         = document.getElementById('dpi-y-input');
+const $btnApplyDpi       = document.getElementById('btn-apply-dpi');
+
+const $pollingGrid       = document.getElementById('polling-grid');
+const $btnApplyPolling   = document.getElementById('btn-apply-polling');
+
+const $batteryBar        = document.getElementById('battery-bar');
+const $batteryPercent    = document.getElementById('battery-percent');
+const $batteryStatus     = document.getElementById('battery-status');
+const $btnRefreshBattery = document.getElementById('btn-refresh-battery');
+
+const $rotationCard      = document.getElementById('rotation-card');
+const $rotationSlider    = document.getElementById('rotation-slider');
+const $rotationValue     = document.getElementById('rotation-value');
+const $btnRotMinus       = document.getElementById('btn-rotation-minus');
+const $btnRotPlus        = document.getElementById('btn-rotation-plus');
+const $btnApplyRotation  = document.getElementById('btn-apply-rotation');
+
+const $logArea           = document.getElementById('log-area');
+const $btnClearLog       = document.getElementById('btn-clear-log');
+
+/* ------------------------------------------------------------------
+ *  Helpers
+ * ---------------------------------------------------------------- */
+function toHex(data) {
+  if (!data || !data.length) return '';
+  return Array.from(data).map(b => b.toString(16).padStart(2, '0')).join(' ');
+}
+
+function now() {
+  return new Date().toLocaleTimeString('zh-CN', { hour12: false });
+}
+
+function log(msg, type = 'info') {
+  const entry = document.createElement('div');
+  entry.className = `console-line ${type}`;
+  entry.innerHTML = `<span class="time">[${now()}]</span>${msg}`;
+  $logArea.appendChild(entry);
+  $logArea.scrollTop = $logArea.scrollHeight;
+}
+
+function vid(v) {
+  return '0x' + (v & 0xFFFF).toString(16).toUpperCase().padStart(4, '0');
+}
+
+function setConnectedUI(connected) {
+  $statusDot.classList.toggle('connected', connected);
+  $statusText.textContent = connected ? '已连接' : '未连接';
+  $btnConnectLogi.disabled  = connected;
+  $btnConnectRazer.disabled = connected;
+  $btnDisconnect.disabled   = !connected;
+  $btnApplyDpi.disabled     = !connected;
+  $btnApplyPolling.disabled = !connected;
+  $btnRefreshBattery.disabled = !connected;
+  $btnApplyRotation.disabled  = !connected;
+
+  if (!connected) {
+    $deviceInfo.classList.add('hidden');
+    $configRestoredMsg.classList.remove('visible');
+    brand = null;
+    protocol = null;
+    deviceInfo = null;
+  }
+}
+
+function updateBrandUI(b) {
+  // Rotation card: Razer only
+  if (b === 'razer') {
+    $rotationCard.classList.remove('hidden');
+  } else {
+    $rotationCard.classList.add('hidden');
+  }
+
+  // XY DPI controls: Razer only
+  if (b === 'razer') {
+    $dpiXYControls.classList.remove('hidden');
+  } else {
+    $dpiXYControls.classList.add('hidden');
+  }
+
+  // DPI presets: adjust max range
+  if (b === 'logitech') {
+    $dpiCustomInput.max = 25600;
+    $dpiCustomInput.placeholder = '100-25600';
+  } else {
+    $dpiCustomInput.max = 30000;
+    $dpiCustomInput.placeholder = '100-30000';
+  }
+
+  // Extended polling rates (2000-8000): Razer only
+  document.querySelectorAll('.polling-btn-extended').forEach(btn => {
+    btn.style.display = b === 'razer' ? 'inline-flex' : 'none';
+  });
+
+  // Disable unsupported rates based on brand
+  document.querySelectorAll('.polling-btn').forEach(btn => {
+    const rate = parseInt(btn.dataset.rate);
+    if (b === 'logitech') {
+      btn.disabled = ![125, 250, 500, 1000].includes(rate);
+    } else {
+      btn.disabled = false;
+    }
+  });
+}
+
+function showDeviceInfo(info, b) {
+  $infoName.textContent   = info.name;
+  $infoVid.textContent    = vid(info.vendorId);
+  $infoPid.textContent    = vid(info.productId);
+  $infoSerial.textContent = info.serialNumber || '—';
+
+  const badge = document.createElement('span');
+  badge.className = `brand-badge ${b}`;
+  badge.textContent = b === 'logitech' ? 'Logitech' : 'Razer';
+  $infoBrand.innerHTML = '';
+  $infoBrand.appendChild(badge);
+
+  $deviceInfo.classList.remove('hidden');
+}
+
+/* ------------------------------------------------------------------
+ *  Saved devices dropdown
+ * ---------------------------------------------------------------- */
+function populateSavedDevices() {
+  const devices = configStore.getAllDevices();
+  $savedSelect.innerHTML = '';
+
+  if (devices.length === 0) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = '— 无保存的配置 —';
+    $savedSelect.appendChild(opt);
+    $btnApplySaved.disabled = true;
+    return;
+  }
+
+  devices.sort((a, b) => new Date(b.lastConnected) - new Date(a.lastConnected));
+
+  const defaultOpt = document.createElement('option');
+  defaultOpt.value = '';
+  defaultOpt.textContent = `— 选择设备 (${devices.length}) —`;
+  $savedSelect.appendChild(defaultOpt);
+
+  for (const cfg of devices) {
+    const opt = document.createElement('option');
+    opt.value = cfg.deviceKey;
+    const time = cfg.lastConnected
+      ? new Date(cfg.lastConnected).toLocaleString('zh-CN', { hour12: false })
+      : '未知';
+    opt.textContent = `${cfg.deviceName} — ${time}`;
+    $savedSelect.appendChild(opt);
+  }
+}
+
+function findSavedConfigByKey(key) {
+  const devices = configStore.getAllDevices();
+  return devices.find(d => d.deviceKey === key) || null;
+}
+
+function restoreUIFromConfig(cfg) {
+  if (!cfg || !cfg.settings) return;
+  const s = cfg.settings;
+
+  // DPI
+  if (s.dpiX) {
+    selectedDpiX = s.dpiX;
+    selectedDpiY = s.dpiY || s.dpiX;
+    selectedDPI = s.dpiX;
+    $dpiCustomInput.value = s.dpiX;
+    $dpiXSlider.value = s.dpiX;
+    $dpiXInput.value = s.dpiX;
+    $dpiYSlider.value = selectedDpiY;
+    $dpiYInput.value = selectedDpiY;
+    highlightPreset(s.dpiX);
+  }
+
+  // Polling rate
+  if (s.pollingRate) {
+    selectedPollingRate = s.pollingRate;
+    highlightPolling(s.pollingRate);
+  }
+
+  // Rotation
+  if (s.rotation !== undefined) {
+    selectedRotation = s.rotation;
+    $rotationSlider.value = s.rotation;
+    $rotationValue.textContent = s.rotation + '\u00B0';
+  }
+}
+
+function highlightPreset(dpi) {
+  document.querySelectorAll('.dpi-btn').forEach(btn => {
+    btn.classList.toggle('active', parseInt(btn.dataset.dpi) === dpi);
+  });
+}
+
+function highlightPolling(rate) {
+  document.querySelectorAll('.polling-btn').forEach(btn => {
+    btn.classList.toggle('active', parseInt(btn.dataset.rate) === rate);
+  });
+}
+
+/* ------------------------------------------------------------------
+ *  Connection
+ * ---------------------------------------------------------------- */
+async function connectDevice(targetBrand) {
+  try {
+    log(`正在连接 ${targetBrand === 'logitech' ? 'Logitech' : 'Razer'} 鼠标...`, 'info');
+
+    if (targetBrand === 'logitech') {
+      protocol = new LogitechHIDPP();
+    } else {
+      protocol = new RazerProtocol();
+    }
+
+    const result = await protocol.connect();
+    brand = targetBrand;
+    deviceInfo = result.deviceInfo;
+
+    // Register input report logging
+    protocol.onInputReport(({ reportId, data }) => {
+      log(`[INPUT] ID=0x${reportId.toString(16).padStart(2,'0')} | ${toHex(data)}`, 'receive');
+    });
+
+    setConnectedUI(true);
+    showDeviceInfo(deviceInfo, brand);
+    updateBrandUI(brand);
+
+    log(`已连接: ${deviceInfo.name} (${vid(deviceInfo.vendorId)}:${vid(deviceInfo.productId)})`, 'success');
+
+    // Try to restore saved config
+    const saved = configStore.load(deviceInfo);
+    if (saved) {
+      restoreUIFromConfig(saved);
+      $configRestoredMsg.classList.add('visible');
+      log('检测到保存的配置，已填充参数', 'info');
+    }
+
+    populateSavedDevices();
+
+  } catch (err) {
+    log(`连接失败: ${err.message}`, 'error');
+    protocol = null;
+    brand = null;
+    deviceInfo = null;
+  }
+}
+
+async function disconnectDevice() {
+  if (!protocol) return;
+  try {
+    await protocol.disconnect();
+    log('已断开连接', 'error');
+  } catch (err) {
+    log(`断开失败: ${err.message}`, 'error');
+  }
+  setConnectedUI(false);
+  updateBrandUI(null);
+}
+
+/* ------------------------------------------------------------------
+ *  DPI
+ * ---------------------------------------------------------------- */
+async function applyDPI() {
+  if (!protocol || !brand) return;
+  try {
+    if (brand === 'logitech') {
+      const dpi = parseInt($dpiCustomInput.value) || 800;
+      log(`设置 DPI: ${dpi}`, 'send');
+      await protocol.setDPI(dpi);
+      log(`DPI 已设置为 ${dpi}`, 'success');
+      configStore.updateSettings(deviceInfo, { dpiX: dpi, dpiY: dpi });
+    } else {
+      // Razer: use XY if split enabled
+      let dpiX, dpiY;
+      if ($dpiSplitToggle.checked) {
+        dpiX = parseInt($dpiXInput.value) || 800;
+        dpiY = parseInt($dpiYInput.value) || 800;
+      } else {
+        dpiX = parseInt($dpiXInput.value) || parseInt($dpiCustomInput.value) || 800;
+        dpiY = dpiX;
+      }
+      log(`设置 DPI: X=${dpiX}, Y=${dpiY}`, 'send');
+      await protocol.setDPI(dpiX, dpiY);
+      log(`DPI 已设置为 X=${dpiX}, Y=${dpiY}`, 'success');
+      configStore.updateSettings(deviceInfo, { dpiX, dpiY });
+    }
+    populateSavedDevices();
+  } catch (err) {
+    log(`DPI 设置失败: ${err.message}`, 'error');
+  }
+}
+
+/* ------------------------------------------------------------------
+ *  Polling Rate
+ * ---------------------------------------------------------------- */
+async function applyPollingRate() {
+  if (!protocol || !selectedPollingRate) return;
+  try {
+    log(`设置回报率: ${selectedPollingRate} Hz`, 'send');
+    await protocol.setPollingRate(selectedPollingRate);
+    log(`回报率已设置为 ${selectedPollingRate} Hz`, 'success');
+    configStore.updateSettings(deviceInfo, { pollingRate: selectedPollingRate });
+    populateSavedDevices();
+  } catch (err) {
+    log(`回报率设置失败: ${err.message}`, 'error');
+  }
+}
+
+/* ------------------------------------------------------------------
+ *  Battery
+ * ---------------------------------------------------------------- */
+async function refreshBattery() {
+  if (!protocol) return;
+  try {
+    log('查询电池状态...', 'send');
+    const bat = await protocol.getBattery();
+
+    $batteryBar.style.width = bat.level + '%';
+    $batteryBar.classList.remove('low', 'medium');
+    if (bat.level <= 20) $batteryBar.classList.add('low');
+    else if (bat.level <= 50) $batteryBar.classList.add('medium');
+
+    $batteryPercent.textContent = bat.level + '%';
+
+    let statusStr = bat.charging ? '充电中' : '未充电';
+    if (brand === 'logitech' && bat.status) {
+      const statusMap = {
+        'Discharging':    '放电中',
+        'Charging':       '充电中',
+        'Nearly Full':    '即将充满',
+        'Full':           '已充满',
+        'Slow Discharge': '缓慢放电',
+      };
+      statusStr = statusMap[bat.status] || bat.status;
+    }
+    $batteryStatus.innerHTML = `状态：${bat.charging
+      ? '<span class="text-success">' + statusStr + '</span>'
+      : statusStr}`;
+
+    log(`电池: ${bat.level}% | ${statusStr}`, 'success');
+  } catch (err) {
+    log(`电池查询失败: ${err.message}`, 'error');
+  }
+}
+
+/* ------------------------------------------------------------------
+ *  Rotation (Razer only)
+ * ---------------------------------------------------------------- */
+async function applyRotation() {
+  if (!protocol || brand !== 'razer') return;
+  try {
+    const angle = parseInt($rotationSlider.value) || 0;
+    log(`设置旋转角度: ${angle}\u00B0`, 'send');
+    await protocol.setRotation(angle);
+    log(`旋转角度已设置为 ${angle}\u00B0`, 'success');
+    configStore.updateSettings(deviceInfo, { rotation: angle });
+    populateSavedDevices();
+  } catch (err) {
+    log(`旋转角度设置失败: ${err.message}`, 'error');
+  }
+}
+
+/* ------------------------------------------------------------------
+ *  Event Bindings
+ * ---------------------------------------------------------------- */
+
+// --- Connection ---
+$btnConnectLogi.addEventListener('click', () => connectDevice('logitech'));
+$btnConnectRazer.addEventListener('click', () => connectDevice('razer'));
+$btnDisconnect.addEventListener('click', disconnectDevice);
+
+// --- DPI presets ---
+document.querySelectorAll('.dpi-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const dpi = parseInt(btn.dataset.dpi);
+    selectedDPI = dpi;
+    $dpiCustomInput.value = dpi;
+    highlightPreset(dpi);
+    // Sync Razer sliders
+    $dpiXSlider.value = dpi;
+    $dpiXInput.value = dpi;
+    if (!$dpiSplitToggle.checked) {
+      $dpiYSlider.value = dpi;
+      $dpiYInput.value = dpi;
+    }
+  });
+});
+
+// --- Custom DPI input ---
+$dpiCustomInput.addEventListener('input', () => {
+  const v = parseInt($dpiCustomInput.value);
+  if (!isNaN(v)) {
+    selectedDPI = v;
+    highlightPreset(v);
+    $dpiXSlider.value = v;
+    $dpiXInput.value = v;
+    if (!$dpiSplitToggle.checked) {
+      $dpiYSlider.value = v;
+      $dpiYInput.value = v;
+    }
+  }
+});
+
+// --- Razer XY DPI ---
+$dpiSplitToggle.addEventListener('change', () => {
+  if ($dpiSplitToggle.checked) {
+    $dpiYRow.classList.remove('hidden');
+  } else {
+    $dpiYRow.classList.add('hidden');
+    $dpiYSlider.value = $dpiXSlider.value;
+    $dpiYInput.value = $dpiXInput.value;
+  }
+});
+
+$dpiXSlider.addEventListener('input', () => {
+  $dpiXInput.value = $dpiXSlider.value;
+  $dpiCustomInput.value = $dpiXSlider.value;
+  highlightPreset(parseInt($dpiXSlider.value));
+  if (!$dpiSplitToggle.checked) {
+    $dpiYSlider.value = $dpiXSlider.value;
+    $dpiYInput.value = $dpiXSlider.value;
+  }
+});
+
+$dpiXInput.addEventListener('input', () => {
+  $dpiXSlider.value = $dpiXInput.value;
+  $dpiCustomInput.value = $dpiXInput.value;
+  highlightPreset(parseInt($dpiXInput.value));
+  if (!$dpiSplitToggle.checked) {
+    $dpiYSlider.value = $dpiXInput.value;
+    $dpiYInput.value = $dpiXInput.value;
+  }
+});
+
+$dpiYSlider.addEventListener('input', () => {
+  $dpiYInput.value = $dpiYSlider.value;
+});
+
+$dpiYInput.addEventListener('input', () => {
+  $dpiYSlider.value = $dpiYInput.value;
+});
+
+$btnApplyDpi.addEventListener('click', applyDPI);
+
+// --- Polling Rate ---
+document.querySelectorAll('.polling-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (btn.disabled) return;
+    selectedPollingRate = parseInt(btn.dataset.rate);
+    highlightPolling(selectedPollingRate);
+  });
+});
+
+$btnApplyPolling.addEventListener('click', applyPollingRate);
+
+// --- Battery ---
+$btnRefreshBattery.addEventListener('click', refreshBattery);
+
+// --- Rotation ---
+$rotationSlider.addEventListener('input', () => {
+  selectedRotation = parseInt($rotationSlider.value);
+  $rotationValue.textContent = selectedRotation + '\u00B0';
+});
+
+$btnRotMinus.addEventListener('click', () => {
+  let v = parseInt($rotationSlider.value) - 1;
+  if (v < -44) v = -44;
+  $rotationSlider.value = v;
+  selectedRotation = v;
+  $rotationValue.textContent = v + '\u00B0';
+});
+
+$btnRotPlus.addEventListener('click', () => {
+  let v = parseInt($rotationSlider.value) + 1;
+  if (v > 44) v = 44;
+  $rotationSlider.value = v;
+  selectedRotation = v;
+  $rotationValue.textContent = v + '\u00B0';
+});
+
+$btnApplyRotation.addEventListener('click', applyRotation);
+
+// --- Saved devices ---
+$savedSelect.addEventListener('change', () => {
+  $btnApplySaved.disabled = !$savedSelect.value;
+});
+
+$btnApplySaved.addEventListener('click', () => {
+  const key = $savedSelect.value;
+  if (!key) return;
+  const cfg = findSavedConfigByKey(key);
+  if (cfg) {
+    restoreUIFromConfig(cfg);
+    log(`已加载配置: ${cfg.deviceName}`, 'info');
+  }
+});
+
+// --- Log ---
+$btnClearLog.addEventListener('click', () => {
+  $logArea.innerHTML = '';
+});
+
+/* ------------------------------------------------------------------
+ *  Init
+ * ---------------------------------------------------------------- */
+populateSavedDevices();
+
+// WebHID support check
+if (!navigator.hid) {
+  log('当前浏览器不支持 WebHID API，请使用 Chrome 89+ 或 Edge 89+', 'error');
+  $btnConnectLogi.disabled = true;
+  $btnConnectRazer.disabled = true;
+} else {
+  log('WebHID API 可用，准备就绪', 'success');
+}
+</script>
+
+</body>
+</html>

@@ -1,0 +1,9 @@
+services:
+  unified-mouse-driver:
+    container_name: unified-mouse-driver
+    build: .
+    ports:
+      - "23010:3000"
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
