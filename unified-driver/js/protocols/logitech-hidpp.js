@@ -42,6 +42,9 @@ const POLLING_MAP = {
 
 const FEATURE_ID = {
   ROOT:            0x0000,
+  FEATURE_SET:     0x0001,
+  DEVICE_FW:       0x0003,
+  DEVICE_NAME:     0x0005,
   UNIFIED_BATTERY: 0x1004,
   BATTERY_STATUS:  0x1000,
   REPORT_RATE:     0x8060,
@@ -87,6 +90,7 @@ export class LogitechHIDPP {
   /** @private */ _boundInputHandler = null;
   /** @private */ _batteryFeatureIndex = null;
   /** @private */ _reportRateFeatureIndex = null;
+  /** @private */ _deviceNameFeatureIndex = null;
 
   constructor() {
     this._device = null;
@@ -95,6 +99,7 @@ export class LogitechHIDPP {
     this._boundInputHandler = null;
     this._batteryFeatureIndex = null;
     this._reportRateFeatureIndex = null;
+    this._deviceNameFeatureIndex = null;
   }
 
   /* -----------------------------------------------------------
@@ -144,20 +149,27 @@ export class LogitechHIDPP {
     }
 
     this._device = target;
-    this._deviceInfo = {
-      name:         target.productName || 'Logitech Mouse',
-      vendorId:     target.vendorId,
-      productId:    target.productId,
-      serialNumber: target.serialNumber || '',
-    };
 
     // Reset cached feature indices for the new connection.
     this._batteryFeatureIndex = null;
     this._reportRateFeatureIndex = null;
+    this._deviceNameFeatureIndex = null;
 
     // Wire up input-report forwarding.
     this._boundInputHandler = this._handleInputReport.bind(this);
     this._device.addEventListener('inputreport', this._boundInputHandler);
+
+    // Query the real mouse name (not "USB Receiver") and serial number
+    // via HID++ 2.0 protocol.
+    const realName = await this._queryDeviceName();
+    const serialNumber = await this._querySerialNumber();
+
+    this._deviceInfo = {
+      name:         realName || target.productName || 'Logitech Mouse',
+      vendorId:     target.vendorId,
+      productId:    target.productId,
+      serialNumber: serialNumber || target.serialNumber || '',
+    };
 
     return {
       device:     this._device,
@@ -181,6 +193,7 @@ export class LogitechHIDPP {
       this._deviceInfo = null;
       this._batteryFeatureIndex = null;
       this._reportRateFeatureIndex = null;
+      this._deviceNameFeatureIndex = null;
     }
   }
 
@@ -269,6 +282,129 @@ export class LogitechHIDPP {
         resolve(null);
       }, timeoutMs);
     });
+  }
+
+  /* -----------------------------------------------------------
+   *  Device Name & Serial Number queries
+   * --------------------------------------------------------- */
+
+  /**
+   * Query the real mouse name via HID++ 2.0 DEVICE_NAME feature (0x0005).
+   *
+   * The USB Receiver reports its own name ("USB Receiver") as the
+   * HIDDevice.productName.  The actual wireless mouse name must be
+   * fetched through the protocol.
+   *
+   * Function 0 on DEVICE_NAME = getDeviceNameCount  -> returns name length
+   * Function 1 on DEVICE_NAME = getDeviceName       -> returns name chars
+   *
+   * @returns {Promise<string>}  The mouse name, or empty string on failure.
+   */
+  async _queryDeviceName() {
+    try {
+      // Step 1: discover DEVICE_NAME feature index.
+      const nameIdx = await this._discoverFeatureIndex(FEATURE_ID.DEVICE_NAME);
+      if (!nameIdx) return '';
+      this._deviceNameFeatureIndex = nameIdx;
+
+      // Step 2: getDeviceNameCount — function 0.
+      // Send: [DevIdx, nameIdx, (0<<4)|SW_ID, 0, 0, 0]
+      const countResp = this._waitForReport(
+        (rid, d) => d[0] === DEVICE_INDEX && d[1] === nameIdx,
+        2000,
+      );
+      await this._sendReport(HIDPP.SHORT, [
+        DEVICE_INDEX, nameIdx, (0x00 << 4) | 0x0D, 0x00, 0x00, 0x00,
+      ]);
+      const countData = await countResp;
+      if (!countData) return '';
+      const nameLen = countData.data[3];
+      if (nameLen === 0 || nameLen > 50) return '';
+
+      // Step 3: getDeviceName — function 1.
+      // May need multiple calls for long names (each returns up to 16 chars).
+      let fullName = '';
+      let offset = 0;
+      while (offset < nameLen) {
+        const nameResp = this._waitForReport(
+          (rid, d) => d[0] === DEVICE_INDEX && d[1] === nameIdx && ((d[2] >> 4) & 0x0F) === 1,
+          2000,
+        );
+        await this._sendReport(HIDPP.SHORT, [
+          DEVICE_INDEX, nameIdx, (0x01 << 4) | 0x0D, offset, 0x00, 0x00,
+        ]);
+        const nameData = await nameResp;
+        if (!nameData) break;
+
+        // Characters start at data[3] in a long report.
+        const chunkStart = 3;
+        const chunkMax = nameData.reportId === HIDPP.LONG ? 16 : 3;
+        for (let i = 0; i < chunkMax && offset + i < nameLen; i++) {
+          const ch = nameData.data[chunkStart + i];
+          if (ch === 0) break;
+          fullName += String.fromCharCode(ch);
+        }
+        offset += chunkMax;
+      }
+
+      return fullName.trim();
+    } catch (_) {
+      return '';
+    }
+  }
+
+  /**
+   * Query the device serial number via HID++ 2.0.
+   *
+   * Uses DEVICE_FW_VERSION feature (0x0003), function 0 = getDeviceInfo.
+   * Response data[3..6] contains a 4-byte unit ID (8-char hex string)
+   * that serves as a unique identifier per device.
+   *
+   * Also tries to read from the entity info which contains the
+   * hardware serial: function 1 = getFwInfo for entity 0.
+   *
+   * @returns {Promise<string>}
+   */
+  async _querySerialNumber() {
+    try {
+      const fwIdx = await this._discoverFeatureIndex(FEATURE_ID.DEVICE_FW);
+      if (!fwIdx) return '';
+
+      // getFwInfo(entityIdx=0) — function 1
+      // Returns: data[3..6] = FW prefix, data[7..10] = FW version
+      // But for serial we want getDeviceInfo — function 0
+      // which returns data[3..6] = unit ID (unique per device).
+      const resp = this._waitForReport(
+        (rid, d) => d[0] === DEVICE_INDEX && d[1] === fwIdx,
+        2000,
+      );
+      await this._sendReport(HIDPP.SHORT, [
+        DEVICE_INDEX, fwIdx, (0x00 << 4) | 0x0D, 0x00, 0x00, 0x00,
+      ]);
+      const data = await resp;
+      if (!data) return '';
+
+      // Entity count is at data[3]; unit ID / serial is in the FW entity.
+      // Try function 1 (getFwInfo) for entity 0 to get fw prefix as serial.
+      const fwResp = this._waitForReport(
+        (rid, d) => d[0] === DEVICE_INDEX && d[1] === fwIdx && ((d[2] >> 4) & 0x0F) === 1,
+        2000,
+      );
+      await this._sendReport(HIDPP.SHORT, [
+        DEVICE_INDEX, fwIdx, (0x01 << 4) | 0x0D, 0x00, 0x00, 0x00,
+      ]);
+      const fwData = await fwResp;
+      if (!fwData) return '';
+
+      // data[3..6] = FW type + prefix, data[7..9] = fw build
+      // Use bytes 3-10 as a hex serial identifier.
+      const serialBytes = fwData.data.slice(3, 11);
+      return Array.from(serialBytes)
+        .map(b => b.toString(16).padStart(2, '0').toUpperCase())
+        .join('');
+    } catch (_) {
+      return '';
+    }
   }
 
   /* -----------------------------------------------------------

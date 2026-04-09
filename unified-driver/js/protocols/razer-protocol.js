@@ -49,29 +49,46 @@ function crc(buf) {
 }
 
 /**
- * Return true when at least one HID collection on the device uses a
- * vendor-defined usage page (>= 0xFF00).  That collection carries the
- * feature-report control interface Razer mice expose for configuration.
+ * Score a HID device by how likely it is to be the Razer control interface.
+ * Higher score = better candidate.
+ *
+ * The correct control interface must have:
+ *   1. A vendor-defined usage page (>= 0xFF00)
+ *   2. Feature reports (used for 90-byte SET_REPORT / GET_REPORT)
+ *
+ * Razer mice expose 3-4 HID interfaces; only one accepts feature reports.
+ *
  * @param {HIDDevice} dev
- * @returns {boolean}
+ * @returns {number}
  */
-function isControlInterface(dev) {
-  return dev.collections.some(c => c.usagePage >= 0xFF00);
+function scoreControlInterface(dev) {
+  let score = 0;
+  for (const c of dev.collections) {
+    if (c.usagePage >= 0xFF00) {
+      score += 10; // vendor-defined usage page
+      if (c.featureReports && c.featureReports.length > 0) {
+        score += 100; // has feature reports — critical for Razer protocol
+      }
+    }
+  }
+  return score;
 }
 
 /**
  * Given an array of HIDDevice objects that all share the same productId
- * (i.e. they represent the same physical mouse), return the single device
- * whose collections include the vendor-specific control interface.
+ * (i.e. they represent the same physical mouse), return the device most
+ * likely to be the working control interface.
  *
- * Falls back to the first device if none match (should not happen in
- * practice, but avoids a hard crash).
+ * Prioritises interfaces with both vendor-defined usage page AND
+ * feature reports, since that is what the 90-byte Razer protocol needs.
  *
  * @param {HIDDevice[]} group
  * @returns {HIDDevice}
  */
 function pickControlDevice(group) {
-  return group.find(isControlInterface) || group[0];
+  // Sort descending by score; highest score wins.
+  const sorted = [...group].sort((a, b) => scoreControlInterface(b) - scoreControlInterface(a));
+  return sorted[0];
 }
 
 export class RazerProtocol {
@@ -129,23 +146,52 @@ export class RazerProtocol {
       groups.get(pid).push(d);
     }
 
-    // Step 4 -- for each physical mouse, pick the vendor-specific control
-    // interface and discard the rest.  If multiple physical mice are
-    // connected we take the first group (future: let caller choose).
+    // Step 4 -- for each physical mouse, sort candidates by score and
+    // try to open + send a probe command.  The first one that accepts a
+    // feature-report write wins.
     const firstGroup = groups.values().next().value;
-    const controlDevice = pickControlDevice(firstGroup);
+    const sorted = [...firstGroup].sort(
+      (a, b) => scoreControlInterface(b) - scoreControlInterface(a),
+    );
 
-    // Step 5 -- open the control interface if necessary.
-    if (!controlDevice.opened) {
-      await controlDevice.open();
+    let controlDevice = null;
+    for (const candidate of sorted) {
+      try {
+        if (!candidate.opened) await candidate.open();
+        // Probe: send a harmless 90-byte get-serial command.
+        const probe = new Uint8Array(REPORT_LEN);
+        probe[0] = STATUS_NEW;
+        probe[1] = 0xFF; // throwaway tx id
+        probe[5] = 0x16; // data size for serial query
+        probe[6] = 0x00; // class
+        probe[7] = 0x82; // command: get serial
+        probe[88] = crc(probe);
+        await candidate.sendFeatureReport(REPORT_ID, probe);
+        controlDevice = candidate;
+        break;
+      } catch (_) {
+        // This interface does not accept feature reports — try next.
+        try { if (candidate.opened) await candidate.close(); } catch (_e) {}
+      }
+    }
+
+    if (!controlDevice) {
+      throw new Error(
+        'Could not find a working Razer control interface. ' +
+        'All HID interfaces rejected feature-report writes.',
+      );
     }
 
     this._device = controlDevice;
+
+    // Step 5 -- query the real serial number via protocol command.
+    const serialNumber = await this._querySerialNumber();
+
     this._deviceInfo = {
       name:         controlDevice.productName || 'Razer Mouse',
       vendorId:     controlDevice.vendorId,
       productId:    controlDevice.productId,
-      serialNumber: controlDevice.serialNumber || '',
+      serialNumber: serialNumber,
     };
 
     // Wire up input-report forwarding.
@@ -208,6 +254,36 @@ export class RazerProtocol {
         reportId: event.reportId,
         data:     new Uint8Array(event.data.buffer),
       });
+    }
+  }
+
+  /* -----------------------------------------------------------
+   *  Serial number query
+   * --------------------------------------------------------- */
+
+  /**
+   * Query the device serial number via Razer protocol.
+   * Class 0x00, ID 0x82, Size 0x16
+   * The serial string starts at response byte 8 (arguments offset 0).
+   *
+   * @returns {Promise<string>}
+   */
+  async _querySerialNumber() {
+    try {
+      const cmd = this._buildCommand(0x00, 0x82, 0x16);
+      await _sleep(50);
+      const resp = await this._sendAndReceive(cmd);
+      if (!resp) return '';
+
+      // Extract ASCII serial from arguments (bytes 8-29).
+      const chars = [];
+      for (let i = 8; i < 30; i++) {
+        if (resp[i] === 0x00) break;
+        chars.push(String.fromCharCode(resp[i]));
+      }
+      return chars.join('').trim();
+    } catch (_) {
+      return '';
     }
   }
 
