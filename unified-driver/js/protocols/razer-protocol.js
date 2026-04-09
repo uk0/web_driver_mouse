@@ -1,517 +1,381 @@
 /**
  * Razer Mouse WebHID Protocol Driver
  *
- * Handles communication with Razer mice over WebHID using the 90-byte
- * Razer HID feature report protocol. Automatically resolves the correct
- * vendor-specific control interface when a device exposes multiple HID
- * collections (mouse input, keyboard-like, vendor-specific).
- *
- * Supported commands: DPI, Polling Rate, Battery, Mouse Rotation.
+ * 90-byte feature report protocol. Automatically probes all HID interfaces
+ * to find the one that actually accepts feature-report writes (the control
+ * interface), since Razer mice expose 3+ interfaces per device.
  */
 
 const RAZER_VENDOR_ID = 0x1532;
-
 const REPORT_LEN = 90;
-const REPORT_ID = 0x00;
+const REPORT_ID  = 0x00;
 
-/* Status byte values (offset 0) */
 const STATUS_NEW     = 0x00;
 const STATUS_BUSY    = 0x01;
 const STATUS_SUCCESS = 0x02;
 const STATUS_FAILURE = 0x03;
 
-/* Polling-rate Hz -> bitmask lookup */
 const POLLING_RATE_MAP = {
-  125:  0x01,
-  250:  0x02,
-  500:  0x04,
-  1000: 0x08,
-  2000: 0x10,
-  4000: 0x20,
-  8000: 0x40,
+  125:  0x01, 250:  0x02, 500:  0x04, 1000: 0x08,
+  2000: 0x10, 4000: 0x20, 8000: 0x40,
 };
 
-/* Battery queries use a fixed transaction ID on many newer models */
-const BATTERY_TRANSACTION_ID = 0x1f;
+/* Viper V3 Pro (0x00C0/0x00C1) uses TX 0x1f for all commands */
+const DEFAULT_TX_ID = 0x1F;
+const MAX_RETRIES   = 10;
+const RETRY_BASE_MS = 20;
 
-/* Minimum delay (ms) between consecutive commands so the MCU can keep up */
-const CMD_INTERVAL_MS = 80;
+/* ------------------------------------------------------------------ */
+/*  Logging helper — callers register a callback via onLog()          */
+/* ------------------------------------------------------------------ */
+let _logFn = null;
+function _log(msg, type = 'info') {
+  if (_logFn) _logFn(msg, type);
+}
 
-/**
- * Compute the Razer CRC: XOR of bytes 2 through 87 inclusive.
- * @param {Uint8Array} buf  Full 90-byte report buffer.
- * @returns {number}
- */
-function crc(buf) {
+function _hex(buf) {
+  return Array.from(buf).map(b => b.toString(16).padStart(2, '0')).join(' ');
+}
+
+function _sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+function _crc(buf) {
   let v = 0;
   for (let i = 2; i < 88; i++) v ^= buf[i];
   return v;
 }
 
-/**
- * Score a HID device by how likely it is to be the Razer control interface.
- * Higher score = better candidate.
- *
- * The correct control interface must have:
- *   1. A vendor-defined usage page (>= 0xFF00)
- *   2. Feature reports (used for 90-byte SET_REPORT / GET_REPORT)
- *
- * Razer mice expose 3-4 HID interfaces; only one accepts feature reports.
- *
- * @param {HIDDevice} dev
- * @returns {number}
- */
-function scoreControlInterface(dev) {
-  let score = 0;
-  for (const c of dev.collections) {
-    if (c.usagePage >= 0xFF00) {
-      score += 10; // vendor-defined usage page
-      if (c.featureReports && c.featureReports.length > 0) {
-        score += 100; // has feature reports — critical for Razer protocol
-      }
-    }
-  }
-  return score;
-}
-
-/**
- * Given an array of HIDDevice objects that all share the same productId
- * (i.e. they represent the same physical mouse), return the device most
- * likely to be the working control interface.
- *
- * Prioritises interfaces with both vendor-defined usage page AND
- * feature reports, since that is what the 90-byte Razer protocol needs.
- *
- * @param {HIDDevice[]} group
- * @returns {HIDDevice}
- */
-function pickControlDevice(group) {
-  // Sort descending by score; highest score wins.
-  const sorted = [...group].sort((a, b) => scoreControlInterface(b) - scoreControlInterface(a));
-  return sorted[0];
-}
-
+/* ------------------------------------------------------------------ */
+/*  Exported class                                                    */
+/* ------------------------------------------------------------------ */
 export class RazerProtocol {
 
-  /** @private */ _device = null;
-  /** @private */ _deviceInfo = null;
-  /** @private */ _txId = 0;
-  /** @private */ _inputCallback = null;
-  /** @private */ _boundInputHandler = null;
+  _device = null;
+  _deviceInfo = null;
+  _txId = 0;
+  _inputCallback = null;
+  _boundInputHandler = null;
 
-  constructor() {
-    this._device = null;
-    this._deviceInfo = null;
-    this._txId = 0;
-    this._inputCallback = null;
-    this._boundInputHandler = null;
-  }
+  constructor() {}
 
-  /* -----------------------------------------------------------
-   *  Connection lifecycle
-   * --------------------------------------------------------- */
+  /* ======================== Public API ======================== */
 
   /**
-   * Prompt the user for a Razer mouse, then automatically resolve the
-   * control interface so only one usable device is surfaced.
-   *
-   * @returns {Promise<{device: HIDDevice, deviceInfo: object}>}
+   * Register a log callback: (message, type) => void
+   * type is 'info' | 'send' | 'receive' | 'success' | 'error'
    */
+  onLog(fn) { _logFn = typeof fn === 'function' ? fn : null; }
+
+  onInputReport(cb) {
+    this._inputCallback = typeof cb === 'function' ? cb : null;
+  }
+
+  isConnected() {
+    return this._device !== null && this._device.opened === true;
+  }
+
+  getDeviceInfo() {
+    return this._deviceInfo ? { ...this._deviceInfo } : null;
+  }
+
+  /* ======================== Connect ======================== */
+
   async connect() {
-    if (!navigator.hid) {
-      throw new Error('WebHID is not supported in this browser. Use Chrome or Edge.');
+    if (!navigator.hid) throw new Error('WebHID not supported');
+
+    _log('Requesting Razer HID device (VID 0x1532)...', 'info');
+    await navigator.hid.requestDevice({ filters: [{ vendorId: RAZER_VENDOR_ID }] });
+
+    const all = await navigator.hid.getDevices();
+    const razer = all.filter(d => d.vendorId === RAZER_VENDOR_ID);
+    _log(`Found ${razer.length} Razer HID interface(s)`, 'info');
+
+    if (razer.length === 0) throw new Error('No Razer device permitted.');
+
+    // Log every interface for debugging
+    for (let i = 0; i < razer.length; i++) {
+      const d = razer[i];
+      const cols = d.collections.map(c => {
+        const fr = c.featureReports ? c.featureReports.length : 0;
+        const ir = c.inputReports ? c.inputReports.length : 0;
+        const or = c.outputReports ? c.outputReports.length : 0;
+        return `UP:0x${c.usagePage.toString(16)} U:0x${c.usage.toString(16)} FR:${fr} IR:${ir} OR:${or}`;
+      });
+      _log(`  [${i}] PID:0x${d.productId.toString(16)} "${d.productName}" collections=[${cols.join(' | ')}]`, 'info');
     }
 
-    // Step 1 -- trigger the browser permission dialog.
-    // The user sees one picker per *physical* mouse, but the browser may
-    // grant access to every HID interface on that device.
-    await navigator.hid.requestDevice({
-      filters: [{ vendorId: RAZER_VENDOR_ID }],
+    // Group by productId
+    const groups = new Map();
+    for (const d of razer) {
+      if (!groups.has(d.productId)) groups.set(d.productId, []);
+      groups.get(d.productId).push(d);
+    }
+
+    const firstGroup = groups.values().next().value;
+    _log(`Probing ${firstGroup.length} interface(s) for PID 0x${firstGroup[0].productId.toString(16)}...`, 'info');
+
+    // Sort: prefer interfaces with vendor usagePage (0xFF00+) and featureReports
+    const sorted = [...firstGroup].sort((a, b) => {
+      const sa = this._scoreInterface(a);
+      const sb = this._scoreInterface(b);
+      return sb - sa;
     });
 
-    // Step 2 -- retrieve ALL permitted Razer HID interfaces.
-    const allDevices = await navigator.hid.getDevices();
-    const razerDevices = allDevices.filter(d => d.vendorId === RAZER_VENDOR_ID);
-
-    if (razerDevices.length === 0) {
-      throw new Error('No Razer device was selected or permitted.');
-    }
-
-    // Step 3 -- group by productId (one physical mouse = one productId).
-    /** @type {Map<number, HIDDevice[]>} */
-    const groups = new Map();
-    for (const d of razerDevices) {
-      const pid = d.productId;
-      if (!groups.has(pid)) groups.set(pid, []);
-      groups.get(pid).push(d);
-    }
-
-    // Step 4 -- for each physical mouse, sort candidates by score and
-    // try to open + send a probe command.  The first one that accepts a
-    // feature-report write wins.
-    const firstGroup = groups.values().next().value;
-    const sorted = [...firstGroup].sort(
-      (a, b) => scoreControlInterface(b) - scoreControlInterface(a),
-    );
-
+    // Probe each interface by trying to send + receive a battery command
     let controlDevice = null;
-    for (const candidate of sorted) {
+    for (let i = 0; i < sorted.length; i++) {
+      const dev = sorted[i];
+      const score = this._scoreInterface(dev);
+      _log(`  Probing interface ${i} (score=${score})...`, 'info');
       try {
-        if (!candidate.opened) await candidate.open();
-        // Probe: send a harmless 90-byte get-serial command.
-        const probe = new Uint8Array(REPORT_LEN);
-        probe[0] = STATUS_NEW;
-        probe[1] = 0xFF; // throwaway tx id
-        probe[5] = 0x16; // data size for serial query
-        probe[6] = 0x00; // class
-        probe[7] = 0x82; // command: get serial
-        probe[88] = crc(probe);
-        await candidate.sendFeatureReport(REPORT_ID, probe);
-        controlDevice = candidate;
-        break;
-      } catch (_) {
-        // This interface does not accept feature reports — try next.
-        try { if (candidate.opened) await candidate.close(); } catch (_e) {}
+        if (!dev.opened) await dev.open();
+
+        // Probe with battery level query (Class 0x07, ID 0x80)
+        const probe = this._buildBuf(0x07, 0x80, 0x02, [0x00, 0x00], DEFAULT_TX_ID);
+        _log(`    SEND: ${_hex(probe.slice(0, 20))}...`, 'send');
+        await dev.sendFeatureReport(REPORT_ID, probe);
+        await _sleep(30);
+
+        const resp = await dev.receiveFeatureReport(REPORT_ID);
+        const data = new Uint8Array(resp.buffer);
+        _log(`    RECV: ${_hex(data.slice(0, 20))}... status=0x${data[0].toString(16)}`, 'receive');
+
+        if (data[0] === STATUS_SUCCESS || data[0] === STATUS_BUSY) {
+          controlDevice = dev;
+          _log(`  -> Interface ${i} WORKS (status=0x${data[0].toString(16)})`, 'success');
+          break;
+        }
+      } catch (e) {
+        _log(`  -> Interface ${i} failed: ${e.message}`, 'error');
+        try { if (dev.opened) await dev.close(); } catch (_) {}
       }
     }
 
     if (!controlDevice) {
-      throw new Error(
-        'Could not find a working Razer control interface. ' +
-        'All HID interfaces rejected feature-report writes.',
-      );
+      throw new Error('No working Razer control interface found.');
     }
 
     this._device = controlDevice;
 
-    // Step 5 -- query the real serial number via protocol command.
-    const serialNumber = await this._querySerialNumber();
+    // Wire up input reports
+    this._boundInputHandler = this._onInput.bind(this);
+    this._device.addEventListener('inputreport', this._boundInputHandler);
+
+    // Query serial number
+    _log('Querying serial number...', 'info');
+    const serial = await this._querySerial();
+    _log(`Serial: "${serial || '(empty)'}"`, serial ? 'success' : 'info');
 
     this._deviceInfo = {
       name:         controlDevice.productName || 'Razer Mouse',
       vendorId:     controlDevice.vendorId,
       productId:    controlDevice.productId,
-      serialNumber: serialNumber,
+      serialNumber: serial,
     };
 
-    // Wire up input-report forwarding.
-    this._boundInputHandler = this._handleInputReport.bind(this);
-    this._device.addEventListener('inputreport', this._boundInputHandler);
-
-    return {
-      device:     this._device,
-      deviceInfo: { ...this._deviceInfo },
-    };
+    return { device: this._device, deviceInfo: { ...this._deviceInfo } };
   }
 
-  /**
-   * Close the HID device and release resources.
-   */
   async disconnect() {
     if (this._device) {
       if (this._boundInputHandler) {
         this._device.removeEventListener('inputreport', this._boundInputHandler);
         this._boundInputHandler = null;
       }
-      if (this._device.opened) {
-        await this._device.close();
-      }
+      if (this._device.opened) await this._device.close();
       this._device = null;
       this._deviceInfo = null;
     }
   }
 
-  /**
-   * @returns {boolean}
-   */
-  isConnected() {
-    return this._device !== null && this._device.opened === true;
-  }
+  /* ======================== DPI ======================== */
 
-  /**
-   * @returns {object|null}
-   */
-  getDeviceInfo() {
-    return this._deviceInfo ? { ...this._deviceInfo } : null;
-  }
-
-  /* -----------------------------------------------------------
-   *  Input-report passthrough
-   * --------------------------------------------------------- */
-
-  /**
-   * Register a callback that fires on every HID input report.
-   * @param {function} callback  Receives `{ reportId, data }`.
-   */
-  onInputReport(callback) {
-    this._inputCallback = typeof callback === 'function' ? callback : null;
-  }
-
-  /** @private */
-  _handleInputReport(event) {
-    if (this._inputCallback) {
-      this._inputCallback({
-        reportId: event.reportId,
-        data:     new Uint8Array(event.data.buffer),
-      });
-    }
-  }
-
-  /* -----------------------------------------------------------
-   *  Serial number query
-   * --------------------------------------------------------- */
-
-  /**
-   * Query the device serial number via Razer protocol.
-   * Class 0x00, ID 0x82, Size 0x16
-   * The serial string starts at response byte 8 (arguments offset 0).
-   *
-   * @returns {Promise<string>}
-   */
-  async _querySerialNumber() {
-    try {
-      const cmd = this._buildCommand(0x00, 0x82, 0x16);
-      await _sleep(50);
-      const resp = await this._sendAndReceive(cmd);
-      if (!resp) return '';
-
-      // Extract ASCII serial from arguments (bytes 8-29).
-      const chars = [];
-      for (let i = 8; i < 30; i++) {
-        if (resp[i] === 0x00) break;
-        chars.push(String.fromCharCode(resp[i]));
-      }
-      return chars.join('').trim();
-    } catch (_) {
-      return '';
-    }
-  }
-
-  /* -----------------------------------------------------------
-   *  Low-level protocol helpers
-   * --------------------------------------------------------- */
-
-  /**
-   * Build a 90-byte Razer command buffer.
-   *
-   * @param {number}   cmdClass   Command class byte.
-   * @param {number}   cmdId      Command ID byte.
-   * @param {number}   dataSize   Number of argument bytes.
-   * @param {number[]} [args=[]]  Argument bytes (max 80).
-   * @param {number|null} [txOverride=null]  Force a specific transaction ID.
-   * @returns {Uint8Array}
-   */
-  _buildCommand(cmdClass, cmdId, dataSize, args = [], txOverride = null) {
-    const buf = new Uint8Array(REPORT_LEN);
-
-    buf[0] = STATUS_NEW;
-    buf[1] = txOverride !== null ? (txOverride & 0xFF) : (this._txId++ & 0xFF);
-    // bytes 2-4 stay 0x00 (remaining packets, protocol type, reserved)
-    buf[5] = dataSize;
-    buf[6] = cmdClass;
-    buf[7] = cmdId;
-
-    for (let i = 0; i < args.length && i < 80; i++) {
-      buf[8 + i] = args[i];
-    }
-
-    buf[88] = crc(buf);
-    buf[89] = 0x00;
-
-    return buf;
-  }
-
-  /**
-   * Send a command buffer to the device.  Prefers `sendFeatureReport`;
-   * falls back to `sendReport` if the first call fails.
-   *
-   * @param {Uint8Array} buf
-   * @returns {Promise<boolean>}
-   */
-  async _send(buf) {
-    if (!this.isConnected()) {
-      throw new Error('Device is not connected.');
-    }
-
-    try {
-      await this._device.sendFeatureReport(REPORT_ID, buf);
-      return true;
-    } catch (_) {
-      // Fallback for devices that only accept output reports.
-      try {
-        await this._device.sendReport(REPORT_ID, buf);
-        return true;
-      } catch (e) {
-        throw new Error(`Failed to send command: ${e.message}`);
-      }
-    }
-  }
-
-  /**
-   * Send a command and read back the feature-report response.
-   *
-   * @param {Uint8Array} buf  The outgoing 90-byte command.
-   * @returns {Promise<Uint8Array>}  The 90-byte response, or null on failure.
-   */
-  async _sendAndReceive(buf) {
-    await this._send(buf);
-    await _sleep(CMD_INTERVAL_MS);
-
-    try {
-      const view = await this._device.receiveFeatureReport(REPORT_ID);
-      return new Uint8Array(view.buffer);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  /* -----------------------------------------------------------
-   *  DPI
-   * --------------------------------------------------------- */
-
-  /**
-   * Set X and Y DPI.
-   *
-   * Protocol:
-   *   Class 0x04, ID 0x06, Size 0x0A
-   *   Args: [stage, enableX, enableY, 0x00, X_HI, X_LO, Y_HI, Y_LO, 0x00, 0x00]
-   *
-   * Followed by a save/confirm:
-   *   Class 0x04, ID 0x86, Size 0x01, Args: [0x01]
-   *
-   * @param {number} x  X-axis DPI (100-30000).
-   * @param {number} y  Y-axis DPI (100-30000).
-   * @returns {Promise<boolean>}
-   */
   async setDPI(x, y) {
     x = Math.max(100, Math.min(30000, Math.round(x)));
     y = Math.max(100, Math.min(30000, Math.round(y)));
 
-    const args = [
-      0x01,               // DPI stage 1
-      0x01,               // X enabled
-      0x01,               // Y enabled
-      0x00,               // reserved
-      (x >> 8) & 0xFF,    // X high
-      x & 0xFF,           // X low
-      (y >> 8) & 0xFF,    // Y high
-      y & 0xFF,           // Y low
-      0x00,               // reserved
-      0x00,               // reserved
-    ];
-
-    const cmd = this._buildCommand(0x04, 0x06, 0x0A, args);
-    const ok = await this._send(cmd);
+    _log(`Setting DPI X=${x} Y=${y}`, 'info');
+    const cmd = this._buildBuf(0x04, 0x06, 0x0A, [
+      0x01, 0x01, 0x01, 0x00,
+      (x >> 8) & 0xFF, x & 0xFF,
+      (y >> 8) & 0xFF, y & 0xFF,
+      0x00, 0x00,
+    ]);
+    const ok = await this._sendCmd(cmd);
     if (!ok) return false;
 
-    // Save / persist the DPI value.
-    await _sleep(CMD_INTERVAL_MS);
-    const saveCmd = this._buildCommand(0x04, 0x86, 0x01, [0x01]);
-    return this._send(saveCmd);
+    await _sleep(60);
+    const save = this._buildBuf(0x04, 0x86, 0x01, [0x01]);
+    return this._sendCmd(save);
   }
 
-  /* -----------------------------------------------------------
-   *  Polling rate
-   * --------------------------------------------------------- */
+  /* ======================== Polling Rate ======================== */
 
-  /**
-   * Set the USB polling rate.
-   *
-   * Protocol:
-   *   Class 0x00, ID 0x40, Size 0x02
-   *   Args: [0x01, rateMask]
-   *
-   * @param {number} rateHz  One of 125, 250, 500, 1000, 2000, 4000, 8000.
-   * @returns {Promise<boolean>}
-   */
   async setPollingRate(rateHz) {
     const mask = POLLING_RATE_MAP[rateHz];
-    if (mask === undefined) {
-      throw new Error(
-        `Unsupported polling rate ${rateHz} Hz. ` +
-        `Accepted values: ${Object.keys(POLLING_RATE_MAP).join(', ')}`
-      );
-    }
+    if (mask === undefined) throw new Error(`Unsupported rate ${rateHz} Hz`);
 
-    const cmd = this._buildCommand(0x00, 0x40, 0x02, [0x01, mask]);
-    return this._send(cmd);
+    _log(`Setting polling rate ${rateHz} Hz (mask=0x${mask.toString(16)})`, 'info');
+    const cmd = this._buildBuf(0x00, 0x40, 0x02, [0x01, mask]);
+    return this._sendCmd(cmd);
   }
 
-  /* -----------------------------------------------------------
-   *  Battery
-   * --------------------------------------------------------- */
+  /* ======================== Battery ======================== */
 
-  /**
-   * Query battery level and charging state.
-   *
-   * Battery level:  Class 0x07, ID 0x80, Size 0x02, TX 0x1f
-   * Charging state: Class 0x07, ID 0x84, Size 0x02, TX 0x1f
-   *
-   * Response byte at offset 9 holds the raw value.
-   *   - Level: 0-255 raw, mapped to 0-100 %.
-   *   - Charging: 0x00 = not charging, 0x01 = charging.
-   *
-   * @returns {Promise<{level: number, charging: boolean}>}
-   */
   async getBattery() {
-    // --- battery level ---
-    const levelCmd = this._buildCommand(
-      0x07, 0x80, 0x02, [0x00, 0x00], BATTERY_TRANSACTION_ID,
-    );
-    const levelResp = await this._sendAndReceive(levelCmd);
+    _log('Querying battery...', 'info');
+
+    // Battery level
+    const levelCmd = this._buildBuf(0x07, 0x80, 0x02, [0x00, 0x00], DEFAULT_TX_ID);
+    const levelResp = await this._sendAndRecv(levelCmd);
 
     let level = 0;
-    if (levelResp && levelResp[2] === 0x00 /* remaining == 0 => valid */) {
-      const raw = levelResp[9]; // argument offset 1
+    if (levelResp && levelResp[0] === STATUS_SUCCESS) {
+      const raw = levelResp[9];
       level = Math.round((raw / 255) * 100);
+      _log(`Battery raw=${raw} -> ${level}%`, 'success');
+    } else {
+      _log(`Battery level query failed (status=0x${levelResp ? levelResp[0].toString(16) : 'null'})`, 'error');
     }
 
-    // --- charging state ---
-    await _sleep(CMD_INTERVAL_MS);
-    const chargeCmd = this._buildCommand(
-      0x07, 0x84, 0x02, [0x00, 0x00], BATTERY_TRANSACTION_ID,
-    );
-    const chargeResp = await this._sendAndReceive(chargeCmd);
+    await _sleep(60);
+
+    // Charging status
+    const chargeCmd = this._buildBuf(0x07, 0x84, 0x02, [0x00, 0x00], DEFAULT_TX_ID);
+    const chargeResp = await this._sendAndRecv(chargeCmd);
 
     let charging = false;
-    if (chargeResp) {
+    if (chargeResp && chargeResp[0] === STATUS_SUCCESS) {
       charging = chargeResp[9] !== 0x00;
+      _log(`Charging: ${charging}`, 'success');
     }
 
     return { level, charging };
   }
 
-  /* -----------------------------------------------------------
-   *  Mouse rotation / angle offset
-   * --------------------------------------------------------- */
+  /* ======================== Rotation ======================== */
 
-  /**
-   * Set the sensor rotation angle.
-   *
-   * Protocol:
-   *   Class 0x0B, ID 0x14, Size 0x03
-   *   Args: [0x01 (enable), 0x01 (persist), angleByte]
-   *
-   * Negative angles are encoded as 256 + angle (two's complement byte).
-   *
-   * @param {number} angle  Degrees, -44 to +44.
-   * @returns {Promise<boolean>}
-   */
   async setRotation(angle) {
     angle = Math.max(-44, Math.min(44, Math.round(angle)));
-
-    // Encode signed byte.
     const angleByte = angle < 0 ? (256 + angle) : angle;
 
-    const cmd = this._buildCommand(0x0B, 0x14, 0x03, [0x01, 0x01, angleByte]);
-    return this._send(cmd);
+    _log(`Setting rotation ${angle} deg (byte=0x${angleByte.toString(16)})`, 'info');
+    const cmd = this._buildBuf(0x0B, 0x14, 0x03, [0x01, 0x01, angleByte]);
+    return this._sendCmd(cmd);
   }
-}
 
-/* -----------------------------------------------------------
- *  Internal utility
- * --------------------------------------------------------- */
+  /* ======================== Internal ======================== */
 
-function _sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  _scoreInterface(dev) {
+    let score = 0;
+    for (const c of dev.collections) {
+      if (c.usagePage >= 0xFF00) score += 10;
+      if (c.featureReports && c.featureReports.length > 0) score += 100;
+    }
+    return score;
+  }
+
+  _onInput(event) {
+    if (this._inputCallback) {
+      this._inputCallback({
+        reportId: event.reportId,
+        data: new Uint8Array(event.data.buffer),
+      });
+    }
+  }
+
+  /**
+   * Build 90-byte command. Uses DEFAULT_TX_ID (0x1F) by default.
+   */
+  _buildBuf(cls, id, size, args = [], txId = null) {
+    const buf = new Uint8Array(REPORT_LEN);
+    buf[0] = STATUS_NEW;
+    buf[1] = txId !== null ? (txId & 0xFF) : DEFAULT_TX_ID;
+    buf[5] = size;
+    buf[6] = cls;
+    buf[7] = id;
+    for (let i = 0; i < args.length && i < 80; i++) buf[8 + i] = args[i];
+    buf[88] = _crc(buf);
+    return buf;
+  }
+
+  /**
+   * Send feature report and return true on success.
+   */
+  async _sendCmd(buf) {
+    if (!this.isConnected()) throw new Error('Not connected');
+    _log(`SEND [${buf[6].toString(16)}:${buf[7].toString(16)}]: ${_hex(buf.slice(0, 20))}...`, 'send');
+    try {
+      await this._device.sendFeatureReport(REPORT_ID, buf);
+      return true;
+    } catch (e) {
+      _log(`Send failed: ${e.message}`, 'error');
+      throw e;
+    }
+  }
+
+  /**
+   * Send command, then poll receiveFeatureReport with retries.
+   * Returns the 90-byte response or null.
+   */
+  async _sendAndRecv(buf) {
+    await this._sendCmd(buf);
+
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      await _sleep(RETRY_BASE_MS + attempt * 10);
+      try {
+        const view = await this._device.receiveFeatureReport(REPORT_ID);
+        const data = new Uint8Array(view.buffer);
+        const status = data[0];
+
+        _log(`RECV [attempt ${attempt}]: status=0x${status.toString(16)} ${_hex(data.slice(0, 20))}...`, 'receive');
+
+        if (status === STATUS_SUCCESS) return data;
+        if (status === STATUS_FAILURE) {
+          _log('Device returned FAILURE', 'error');
+          return data;
+        }
+        // STATUS_BUSY or STATUS_NEW -> retry
+        if (status === STATUS_BUSY) {
+          _log(`Busy, retrying (${attempt + 1}/${MAX_RETRIES})...`, 'info');
+        }
+      } catch (e) {
+        _log(`receiveFeatureReport error: ${e.message}`, 'error');
+        return null;
+      }
+    }
+
+    _log('Max retries exceeded', 'error');
+    return null;
+  }
+
+  /**
+   * Query serial number: Class 0x00, ID 0x82, Size 0x16, TX 0x1F
+   */
+  async _querySerial() {
+    try {
+      const cmd = this._buildBuf(0x00, 0x82, 0x16, [], DEFAULT_TX_ID);
+      const resp = await this._sendAndRecv(cmd);
+      if (!resp || resp[0] !== STATUS_SUCCESS) {
+        _log(`Serial query failed (status=${resp ? '0x' + resp[0].toString(16) : 'null'})`, 'error');
+        return '';
+      }
+
+      const chars = [];
+      for (let i = 8; i < 30; i++) {
+        if (resp[i] === 0x00) break;
+        if (resp[i] >= 0x20 && resp[i] <= 0x7E) {
+          chars.push(String.fromCharCode(resp[i]));
+        }
+      }
+      const serial = chars.join('').trim();
+      _log(`Serial response bytes: ${_hex(resp.slice(8, 30))}`, 'info');
+      return serial;
+    } catch (e) {
+      _log(`Serial query error: ${e.message}`, 'error');
+      return '';
+    }
+  }
 }

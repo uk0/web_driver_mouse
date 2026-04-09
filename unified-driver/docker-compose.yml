@@ -7,3 +7,8 @@ services:
     restart: unless-stopped
     environment:
       - NODE_ENV=production
+    volumes:
+      - mouse-data:/app/data
+
+volumes:
+  mouse-data:

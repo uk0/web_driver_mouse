@@ -361,8 +361,8 @@ function showDeviceInfo(info, b) {
 /* ------------------------------------------------------------------
  *  Saved devices dropdown
  * ---------------------------------------------------------------- */
-function populateSavedDevices() {
-  const devices = configStore.getAllDevices();
+async function populateSavedDevices() {
+  const devices = await configStore.getAllDevices();
   $savedSelect.innerHTML = '';
 
   if (devices.length === 0) {
@@ -453,6 +453,11 @@ async function connectDevice(targetBrand) {
       protocol = new RazerProtocol();
     }
 
+    // Register protocol-level log callback (Razer has onLog)
+    if (protocol.onLog) {
+      protocol.onLog((msg, type) => log(`[PROTO] ${msg}`, type));
+    }
+
     const result = await protocol.connect();
     brand = targetBrand;
     deviceInfo = result.deviceInfo;
@@ -467,16 +472,21 @@ async function connectDevice(targetBrand) {
     updateBrandUI(brand);
 
     log(`已连接: ${deviceInfo.name} (${vid(deviceInfo.vendorId)}:${vid(deviceInfo.productId)})`, 'success');
+    if (deviceInfo.serialNumber) {
+      log(`序列号: ${deviceInfo.serialNumber}`, 'success');
+    } else {
+      log('序列号: 未获取到', 'info');
+    }
 
-    // Try to restore saved config
-    const saved = configStore.load(deviceInfo);
+    // Try to restore saved config from server
+    const saved = await configStore.load(deviceInfo);
     if (saved) {
       restoreUIFromConfig(saved);
       $configRestoredMsg.classList.add('visible');
       log('检测到保存的配置，已填充参数', 'info');
     }
 
-    populateSavedDevices();
+    await populateSavedDevices();
 
   } catch (err) {
     log(`连接失败: ${err.message}`, 'error');
@@ -509,7 +519,7 @@ async function applyDPI() {
       log(`设置 DPI: ${dpi}`, 'send');
       await protocol.setDPI(dpi);
       log(`DPI 已设置为 ${dpi}`, 'success');
-      configStore.updateSettings(deviceInfo, { dpiX: dpi, dpiY: dpi });
+      await configStore.updateSettings(deviceInfo, { dpiX: dpi, dpiY: dpi });
     } else {
       // Razer: use XY if split enabled
       let dpiX, dpiY;
@@ -523,9 +533,9 @@ async function applyDPI() {
       log(`设置 DPI: X=${dpiX}, Y=${dpiY}`, 'send');
       await protocol.setDPI(dpiX, dpiY);
       log(`DPI 已设置为 X=${dpiX}, Y=${dpiY}`, 'success');
-      configStore.updateSettings(deviceInfo, { dpiX, dpiY });
+      await configStore.updateSettings(deviceInfo, { dpiX, dpiY });
     }
-    populateSavedDevices();
+    await populateSavedDevices();
   } catch (err) {
     log(`DPI 设置失败: ${err.message}`, 'error');
   }
@@ -540,8 +550,8 @@ async function applyPollingRate() {
     log(`设置回报率: ${selectedPollingRate} Hz`, 'send');
     await protocol.setPollingRate(selectedPollingRate);
     log(`回报率已设置为 ${selectedPollingRate} Hz`, 'success');
-    configStore.updateSettings(deviceInfo, { pollingRate: selectedPollingRate });
-    populateSavedDevices();
+    await configStore.updateSettings(deviceInfo, { pollingRate: selectedPollingRate });
+    await populateSavedDevices();
   } catch (err) {
     log(`回报率设置失败: ${err.message}`, 'error');
   }
@@ -594,8 +604,8 @@ async function applyRotation() {
     log(`设置旋转角度: ${angle}\u00B0`, 'send');
     await protocol.setRotation(angle);
     log(`旋转角度已设置为 ${angle}\u00B0`, 'success');
-    configStore.updateSettings(deviceInfo, { rotation: angle });
-    populateSavedDevices();
+    await configStore.updateSettings(deviceInfo, { rotation: angle });
+    await populateSavedDevices();
   } catch (err) {
     log(`旋转角度设置失败: ${err.message}`, 'error');
   }
