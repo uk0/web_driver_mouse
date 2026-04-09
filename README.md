@@ -1,23 +1,37 @@
-### 简约的鼠标WebHID驱动
+### Web Mouse Driver
 
+Browser-based mouse driver via WebHID. No software installation required.
 
+**Demo: https://mouse.wwwneo.com**
 
-* 支持`GPW2`代
-* 支持雷蛇 `V3 Pro`
+#### Supported Devices
 
+| Brand | Device | Features |
+|-------|--------|----------|
+| Logitech | PRO X SUPERLIGHT | DPI, Polling Rate, Battery |
+| Razer | Viper V3 Pro | DPI (X/Y), Polling Rate (up to 8000Hz), Battery, Rotation |
 
-### 雷蛇网页驱动 https://r.wwwneo.com
+#### Screenshots
 
-> 连接设备后会出现四个选项，选择对应设备即可
+| Razer Viper V3 Pro | Logitech PRO X Wireless |
+|---|---|
+| ![Razer](images/img.png) | ![Logitech](images/img_1.png) |
 
-![img.png](img.png)
+#### Features
 
+- Auto-detect device brand by Vendor ID
+- Multi-profile config per device serial number
+- Real-time battery monitoring (60s polling)
+- Auto-apply saved config on reconnect
+- Server-side config persistence
 
+#### Tech Stack
 
+- WebHID API (Chrome 89+ / Edge 89+)
+- Logitech HID++ 2.0 protocol
+- Razer 90-byte feature report protocol
+- Docker + Nginx deployment
 
+#### Usage
 
-
-### GPW2 网页驱动 https://g.wwwneo.com
-
-> 参考提示进行选择即可
-
+Open https://mouse.wwwneo.com → Click connect → Select your mouse → Done.

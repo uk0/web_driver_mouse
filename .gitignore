@@ -1,7 +1,8 @@
 .idea
 .DS_Store
-node_modules
+.github
 .claude
+node_modules
 razermouse_driver.c
 CLAUDE.md
 docs/
@@ -18,3 +19,4 @@ dist/
 *.pem
 *.key
 *.crt
+web_mouse_driver_article/
