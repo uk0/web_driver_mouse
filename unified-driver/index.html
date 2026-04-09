@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Web Mouse Driver</title>
-  <link rel="stylesheet" href="css/style.css?v=5">
+  <link rel="stylesheet" href="css/style.css?v=6">
 </head>
 <body>
 
@@ -61,21 +61,26 @@
       </div>
     </div>
 
-    <!-- Saved devices dropdown -->
-    <div class="saved-devices mt-15" id="saved-devices-section">
+    <!-- Profile Management (shown after connect) -->
+    <div class="hidden mt-15" id="profile-section">
       <div class="section-divider"></div>
-      <label class="text-secondary mb-10" style="display:block;font-size:0.9em">已保存的设备配置</label>
-      <div class="flex gap-10" style="align-items:center">
-        <select id="saved-devices-select" style="flex:1">
-          <option value="">— 无保存的配置 —</option>
-        </select>
+      <div class="flex-between mb-10">
+        <label class="text-secondary" style="font-size:0.82em;font-family:var(--mono,monospace);letter-spacing:0.05em;text-transform:uppercase">配置方案</label>
+        <button class="btn btn-sm btn-secondary" id="btn-new-profile">+ 新建</button>
       </div>
-      <div class="mt-10">
-        <button class="btn btn-sm btn-secondary" id="btn-apply-saved" disabled>应用保存的配置</button>
+      <div class="flex gap-10 mb-10" style="align-items:center">
+        <select id="profile-select" class="saved-devices" style="flex:1">
+          <option value="">— 无配置 —</option>
+        </select>
+        <button class="btn btn-sm" id="btn-apply-profile" disabled>应用</button>
+        <button class="btn btn-sm btn-danger" id="btn-delete-profile" disabled style="padding:7px 10px">删除</button>
+      </div>
+      <div class="flex gap-10" style="align-items:center">
+        <button class="btn btn-sm btn-secondary" id="btn-save-current" disabled>保存当前设置到选中方案</button>
       </div>
     </div>
 
-    <div class="info-msg mt-10" id="config-restored-msg">检测到保存的配置，已自动填充参数。点击对应按钮手动应用。</div>
+    <div class="info-msg mt-10" id="config-restored-msg">已自动应用配置方案</div>
   </section>
 
   <!-- ===================== Card 2: DPI Settings ===================== -->
@@ -194,9 +199,9 @@
 
 <!-- ===================== Application Logic ===================== -->
 <script type="module">
-import { RazerProtocol } from './js/protocols/razer-protocol.js?v=5';
-import { LogitechHIDPP } from './js/protocols/logitech-hidpp.js?v=5';
-import { ConfigStore } from './js/config-store.js?v=5';
+import { RazerProtocol } from './js/protocols/razer-protocol.js?v=6';
+import { LogitechHIDPP } from './js/protocols/logitech-hidpp.js?v=6';
+import { ConfigStore } from './js/config-store.js?v=6';
 
 /* ------------------------------------------------------------------
  *  App State
@@ -228,8 +233,12 @@ const $infoVid           = document.getElementById('info-vid');
 const $infoPid           = document.getElementById('info-pid');
 const $infoSerial        = document.getElementById('info-serial');
 const $infoBrand         = document.getElementById('info-brand');
-const $savedSelect       = document.getElementById('saved-devices-select');
-const $btnApplySaved     = document.getElementById('btn-apply-saved');
+const $profileSection    = document.getElementById('profile-section');
+const $profileSelect     = document.getElementById('profile-select');
+const $btnNewProfile     = document.getElementById('btn-new-profile');
+const $btnApplyProfile   = document.getElementById('btn-apply-profile');
+const $btnDeleteProfile  = document.getElementById('btn-delete-profile');
+const $btnSaveCurrent    = document.getElementById('btn-save-current');
 const $configRestoredMsg = document.getElementById('config-restored-msg');
 
 const $dpiPresets        = document.getElementById('dpi-presets');
@@ -298,6 +307,7 @@ function setConnectedUI(connected) {
 
   if (!connected) {
     $deviceInfo.classList.add('hidden');
+    $profileSection.classList.add('hidden');
     $configRestoredMsg.classList.remove('visible');
     brand = null;
     protocol = null;
@@ -361,49 +371,42 @@ function showDeviceInfo(info, b) {
 }
 
 /* ------------------------------------------------------------------
- *  Saved devices dropdown
+ *  Profile management
  * ---------------------------------------------------------------- */
-async function populateSavedDevices() {
-  const devices = await configStore.getAllDevices();
-  $savedSelect.innerHTML = '';
+async function refreshProfileList() {
+  if (!deviceInfo) return;
+  const names = await configStore.listProfiles(deviceInfo);
+  const dev = await configStore.getDevice(deviceInfo);
+  const active = dev ? dev.activeProfile : null;
 
-  if (devices.length === 0) {
+  $profileSelect.innerHTML = '';
+
+  if (names.length === 0) {
     const opt = document.createElement('option');
     opt.value = '';
-    opt.textContent = '— 无保存的配置 —';
-    $savedSelect.appendChild(opt);
-    $btnApplySaved.disabled = true;
+    opt.textContent = '— 无配置方案 —';
+    $profileSelect.appendChild(opt);
+    $btnApplyProfile.disabled = true;
+    $btnDeleteProfile.disabled = true;
+    $btnSaveCurrent.disabled = true;
     return;
   }
 
-  devices.sort((a, b) => new Date(b.lastConnected) - new Date(a.lastConnected));
-
-  const defaultOpt = document.createElement('option');
-  defaultOpt.value = '';
-  defaultOpt.textContent = `— 选择设备 (${devices.length}) —`;
-  $savedSelect.appendChild(defaultOpt);
-
-  for (const cfg of devices) {
+  for (const name of names) {
     const opt = document.createElement('option');
-    opt.value = cfg.deviceKey;
-    const time = cfg.lastConnected
-      ? new Date(cfg.lastConnected).toLocaleString('zh-CN', { hour12: false })
-      : '未知';
-    opt.textContent = `${cfg.deviceName} — ${time}`;
-    $savedSelect.appendChild(opt);
+    opt.value = name;
+    opt.textContent = name + (name === active ? ' (当前)' : '');
+    if (name === active) opt.selected = true;
+    $profileSelect.appendChild(opt);
   }
+
+  $btnApplyProfile.disabled = false;
+  $btnDeleteProfile.disabled = false;
+  $btnSaveCurrent.disabled = false;
 }
 
-function findSavedConfigByKey(key) {
-  const devices = configStore.getAllDevices();
-  return devices.find(d => d.deviceKey === key) || null;
-}
-
-function restoreUIFromConfig(cfg) {
-  if (!cfg || !cfg.settings) return;
-  const s = cfg.settings;
-
-  // DPI
+function restoreUIFromProfile(s) {
+  if (!s) return;
   if (s.dpiX) {
     selectedDpiX = s.dpiX;
     selectedDpiY = s.dpiY || s.dpiX;
@@ -415,19 +418,33 @@ function restoreUIFromConfig(cfg) {
     $dpiYInput.value = selectedDpiY;
     highlightPreset(s.dpiX);
   }
-
-  // Polling rate
   if (s.pollingRate) {
     selectedPollingRate = s.pollingRate;
     highlightPolling(s.pollingRate);
   }
-
-  // Rotation
   if (s.rotation !== undefined) {
     selectedRotation = s.rotation;
     $rotationSlider.value = s.rotation;
     $rotationValue.textContent = s.rotation + '\u00B0';
   }
+}
+
+/** Gather current UI state as a settings object. */
+function getCurrentSettings() {
+  let dpiX, dpiY;
+  if (brand === 'razer' && $dpiSplitToggle.checked) {
+    dpiX = parseInt($dpiXInput.value) || 800;
+    dpiY = parseInt($dpiYInput.value) || 800;
+  } else {
+    dpiX = parseInt($dpiCustomInput.value) || parseInt($dpiXInput.value) || 800;
+    dpiY = dpiX;
+  }
+  return {
+    dpiX,
+    dpiY,
+    pollingRate: selectedPollingRate || 1000,
+    rotation: selectedRotation || 0,
+  };
 }
 
 function highlightPreset(dpi) {
@@ -480,16 +497,19 @@ async function connectDevice(targetBrand) {
       log('序列号: 未获取到', 'info');
     }
 
-    // Auto-apply saved config
-    const saved = await configStore.load(deviceInfo);
-    if (saved && saved.settings) {
-      restoreUIFromConfig(saved);
-      $configRestoredMsg.classList.add('visible');
-      log('检测到保存的配置，正在自动应用...', 'info');
-      await autoApplyConfig(saved.settings);
-    }
+    // Show profile section
+    $profileSection.classList.remove('hidden');
+    await refreshProfileList();
 
-    await populateSavedDevices();
+    // Auto-apply: if profiles exist, apply active profile
+    const activeProfile = await configStore.getActiveProfile(deviceInfo);
+    if (activeProfile) {
+      const dev = await configStore.getDevice(deviceInfo);
+      log(`检测到配置方案 "${dev.activeProfile}"，正在自动应用...`, 'info');
+      restoreUIFromProfile(activeProfile);
+      $configRestoredMsg.classList.add('visible');
+      await autoApplyConfig(activeProfile);
+    }
 
     // Auto-query battery immediately, then poll every 60s
     startBatteryPolling();
@@ -526,7 +546,7 @@ async function applyDPI() {
       log(`设置 DPI: ${dpi}`, 'send');
       await protocol.setDPI(dpi);
       log(`DPI 已设置为 ${dpi}`, 'success');
-      await configStore.updateSettings(deviceInfo, { dpiX: dpi, dpiY: dpi });
+      await configStore.updateActive(deviceInfo, { dpiX: dpi, dpiY: dpi });
     } else {
       // Razer: use XY if split enabled
       let dpiX, dpiY;
@@ -540,9 +560,9 @@ async function applyDPI() {
       log(`设置 DPI: X=${dpiX}, Y=${dpiY}`, 'send');
       await protocol.setDPI(dpiX, dpiY);
       log(`DPI 已设置为 X=${dpiX}, Y=${dpiY}`, 'success');
-      await configStore.updateSettings(deviceInfo, { dpiX, dpiY });
+      await configStore.updateActive(deviceInfo, { dpiX, dpiY });
     }
-    await populateSavedDevices();
+    await refreshProfileList();
   } catch (err) {
     log(`DPI 设置失败: ${err.message}`, 'error');
   }
@@ -557,8 +577,8 @@ async function applyPollingRate() {
     log(`设置回报率: ${selectedPollingRate} Hz`, 'send');
     await protocol.setPollingRate(selectedPollingRate);
     log(`回报率已设置为 ${selectedPollingRate} Hz`, 'success');
-    await configStore.updateSettings(deviceInfo, { pollingRate: selectedPollingRate });
-    await populateSavedDevices();
+    await configStore.updateActive(deviceInfo, { pollingRate: selectedPollingRate });
+    await refreshProfileList();
   } catch (err) {
     log(`回报率设置失败: ${err.message}`, 'error');
   }
@@ -675,8 +695,8 @@ async function applyRotation() {
     log(`设置旋转角度: ${angle}\u00B0`, 'send');
     await protocol.setRotation(angle);
     log(`旋转角度已设置为 ${angle}\u00B0`, 'success');
-    await configStore.updateSettings(deviceInfo, { rotation: angle });
-    await populateSavedDevices();
+    await configStore.updateActive(deviceInfo, { rotation: angle });
+    await refreshProfileList();
   } catch (err) {
     log(`旋转角度设置失败: ${err.message}`, 'error');
   }
@@ -802,19 +822,51 @@ $btnRotPlus.addEventListener('click', () => {
 
 $btnApplyRotation.addEventListener('click', applyRotation);
 
-// --- Saved devices ---
-$savedSelect.addEventListener('change', () => {
-  $btnApplySaved.disabled = !$savedSelect.value;
+// --- Profile management ---
+$profileSelect.addEventListener('change', () => {
+  const hasVal = !!$profileSelect.value;
+  $btnApplyProfile.disabled = !hasVal;
+  $btnDeleteProfile.disabled = !hasVal;
+  $btnSaveCurrent.disabled = !hasVal;
 });
 
-$btnApplySaved.addEventListener('click', () => {
-  const key = $savedSelect.value;
-  if (!key) return;
-  const cfg = findSavedConfigByKey(key);
-  if (cfg) {
-    restoreUIFromConfig(cfg);
-    log(`已加载配置: ${cfg.deviceName}`, 'info');
-  }
+$btnApplyProfile.addEventListener('click', async () => {
+  const name = $profileSelect.value;
+  if (!name || !deviceInfo) return;
+  const profile = await configStore.getProfile(deviceInfo, name);
+  if (!profile) return;
+  await configStore.setActiveProfile(deviceInfo, name);
+  restoreUIFromProfile(profile);
+  log(`正在应用方案 "${name}"...`, 'info');
+  await autoApplyConfig(profile);
+  await refreshProfileList();
+});
+
+$btnDeleteProfile.addEventListener('click', async () => {
+  const name = $profileSelect.value;
+  if (!name || !deviceInfo) return;
+  await configStore.deleteProfile(deviceInfo, name);
+  log(`已删除方案 "${name}"`, 'info');
+  await refreshProfileList();
+});
+
+$btnNewProfile.addEventListener('click', async () => {
+  if (!deviceInfo) return;
+  const name = prompt('输入配置方案名称:');
+  if (!name || !name.trim()) return;
+  const settings = getCurrentSettings();
+  await configStore.saveProfile(deviceInfo, name.trim(), settings);
+  await configStore.setActiveProfile(deviceInfo, name.trim());
+  log(`已创建方案 "${name.trim()}"`, 'success');
+  await refreshProfileList();
+});
+
+$btnSaveCurrent.addEventListener('click', async () => {
+  const name = $profileSelect.value;
+  if (!name || !deviceInfo) return;
+  const settings = getCurrentSettings();
+  await configStore.saveProfile(deviceInfo, name, settings);
+  log(`已保存当前设置到方案 "${name}"`, 'success');
 });
 
 // --- Log ---
@@ -825,8 +877,6 @@ $btnClearLog.addEventListener('click', () => {
 /* ------------------------------------------------------------------
  *  Init
  * ---------------------------------------------------------------- */
-populateSavedDevices();
-
 // WebHID support check
 if (!navigator.hid) {
   log('当前浏览器不支持 WebHID API，请使用 Chrome 89+ 或 Edge 89+', 'error');
