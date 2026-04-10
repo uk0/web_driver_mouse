@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Web Mouse Driver</title>
-  <link rel="stylesheet" href="css/style.css?v=14">
+  <link rel="stylesheet" href="css/style.css?v=15">
 </head>
 <body>
 
@@ -235,9 +235,9 @@
 
 <!-- ===================== Application Logic ===================== -->
 <script type="module">
-import { RazerProtocol } from './js/protocols/razer-protocol.js?v=14';
-import { LogitechHIDPP } from './js/protocols/logitech-hidpp.js?v=14';
-import { ConfigStore } from './js/config-store.js?v=14';
+import { RazerProtocol } from './js/protocols/razer-protocol.js?v=15';
+import { LogitechHIDPP } from './js/protocols/logitech-hidpp.js?v=15';
+import { ConfigStore } from './js/config-store.js?v=15';
 
 /* ------------------------------------------------------------------
  *  App State
@@ -253,7 +253,9 @@ let selectedDpiY = 800;
 let selectedPollingRate = null;
 let selectedRotation = 0;
 let batteryTimer = null;
-const BATTERY_POLL_MS = 60000; // 60s
+const BATTERY_POLL_MS = 60000;
+const BATTERY_RETRY_MS = 5000;  // retry on failure
+const BATTERY_INIT_DELAY = 2000; // wait for device to settle after connect
 
 /* ------------------------------------------------------------------
  *  DOM References
@@ -692,10 +694,13 @@ async function applyPollingRate() {
 /* ------------------------------------------------------------------
  *  Battery
  * ---------------------------------------------------------------- */
-async function refreshBattery() {
-  if (!protocol) return;
+let _batteryRetries = 0;
+const MAX_BATTERY_RETRIES = 3;
+
+async function refreshBattery(silent = false) {
+  if (!protocol || !protocol.isConnected()) return false;
   try {
-    log('查询电池状态...', 'send');
+    if (!silent) log('查询电池状态...', 'send');
     const bat = await protocol.getBattery();
 
     const pct = bat.level;
@@ -705,7 +710,6 @@ async function refreshBattery() {
     if (pct <= 20) { $batteryBar.classList.add('low'); $batteryRingFill.classList.add('low'); }
     else if (pct <= 50) { $batteryBar.classList.add('medium'); $batteryRingFill.classList.add('medium'); }
 
-    // Ring: circumference = 2 * PI * 34 ≈ 213.6
     const circ = 213.6;
     $batteryRingFill.style.strokeDashoffset = circ - (circ * pct / 100);
 
@@ -715,11 +719,8 @@ async function refreshBattery() {
     let statusStr = bat.charging ? '充电中' : '未充电';
     if (brand === 'logitech' && bat.status) {
       const statusMap = {
-        'Discharging':    '放电中',
-        'Charging':       '充电中',
-        'Nearly Full':    '即将充满',
-        'Full':           '已充满',
-        'Slow Discharge': '缓慢放电',
+        'Discharging': '放电中', 'Charging': '充电中',
+        'Nearly Full': '即将充满', 'Full': '已充满', 'Slow Discharge': '缓慢放电',
       };
       statusStr = statusMap[bat.status] || bat.status;
     }
@@ -727,9 +728,12 @@ async function refreshBattery() {
       ? '<span class="text-success">' + statusStr + '</span>'
       : statusStr}`;
 
-    log(`电池: ${bat.level}% | ${statusStr}`, 'success');
+    if (!silent) log(`电池: ${pct}% | ${statusStr}`, 'success');
+    _batteryRetries = 0;
+    return true;
   } catch (err) {
-    log(`电池查询失败: ${err.message}`, 'error');
+    if (!silent) log(`电池查询失败: ${err.message}`, 'error');
+    return false;
   }
 }
 
@@ -777,17 +781,42 @@ async function autoApplyConfig(settings) {
  * ---------------------------------------------------------------- */
 function startBatteryPolling() {
   stopBatteryPolling();
-  // Immediate first query
-  refreshBattery();
-  // Then poll periodically
-  batteryTimer = setInterval(() => {
-    if (protocol && protocol.isConnected()) {
-      refreshBattery();
-    } else {
-      stopBatteryPolling();
+  _batteryRetries = 0;
+
+  // Delay first query to let device settle after config apply
+  setTimeout(async () => {
+    if (!protocol || !protocol.isConnected()) return;
+
+    // First query with retries
+    let ok = await refreshBattery();
+    if (!ok) {
+      for (let i = 1; i <= MAX_BATTERY_RETRIES; i++) {
+        log(`电池查询重试 (${i}/${MAX_BATTERY_RETRIES})...`, 'info');
+        await new Promise(r => setTimeout(r, BATTERY_RETRY_MS));
+        if (!protocol || !protocol.isConnected()) return;
+        ok = await refreshBattery();
+        if (ok) break;
+      }
     }
-  }, BATTERY_POLL_MS);
-  log(`电量自动刷新已启动 (${BATTERY_POLL_MS / 1000}s)`, 'info');
+
+    // Start periodic polling
+    batteryTimer = setInterval(async () => {
+      if (protocol && protocol.isConnected()) {
+        const success = await refreshBattery(true); // silent
+        if (!success) {
+          // Retry once on failure
+          await new Promise(r => setTimeout(r, BATTERY_RETRY_MS));
+          if (protocol && protocol.isConnected()) {
+            await refreshBattery(true);
+          }
+        }
+      } else {
+        stopBatteryPolling();
+      }
+    }, BATTERY_POLL_MS);
+
+    log(`电量自动刷新已启动 (${BATTERY_POLL_MS / 1000}s)`, 'info');
+  }, BATTERY_INIT_DELAY);
 }
 
 function stopBatteryPolling() {
