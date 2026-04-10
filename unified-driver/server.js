@@ -5,8 +5,8 @@ const path = require('path');
 const PORT = process.env.PORT || 3000;
 const DATA_DIR = path.join(__dirname, 'data');
 const CONFIG_FILE = path.join(DATA_DIR, 'devices.json');
+const STATS_FILE = path.join(DATA_DIR, 'stats.json');
 
-// Ensure data directory exists
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 // Load config from disk
@@ -22,6 +22,20 @@ function loadConfigs() {
 // Save config to disk
 function saveConfigs(configs) {
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(configs, null, 2), 'utf8');
+}
+
+// Stats persistence
+function loadStats() {
+  try { if (fs.existsSync(STATS_FILE)) return JSON.parse(fs.readFileSync(STATS_FILE, 'utf8')); } catch (_) {}
+  return { pv: 0, uvAll: [], daily: {} };
+}
+function saveStats(stats) {
+  // Prune daily entries older than 90 days
+  if (stats.daily) {
+    const cutoff = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
+    for (const d of Object.keys(stats.daily)) { if (d < cutoff) delete stats.daily[d]; }
+  }
+  fs.writeFileSync(STATS_FILE, JSON.stringify(stats), 'utf8');
 }
 
 // MIME types
@@ -114,6 +128,51 @@ const server = http.createServer(async (req, res) => {
   // GET /api/status — health check
   if (pathname === '/api/status') {
     return sendJSON(res, 200, { status: 'ok', uptime: process.uptime() });
+  }
+
+  // ── UV / PV Stats ──
+
+  // POST /api/stats/hit — record a page view
+  if (pathname === '/api/stats/hit' && req.method === 'POST') {
+    try {
+      const body = await readBody(req);
+      const uid = body.uid || '';
+      const stats = loadStats();
+      const today = new Date().toISOString().slice(0, 10);
+
+      // PV: always increment
+      stats.pv = (stats.pv || 0) + 1;
+      if (!stats.daily) stats.daily = {};
+      if (!stats.daily[today]) stats.daily[today] = { pv: 0, uvSet: [] };
+      stats.daily[today].pv++;
+
+      // UV: unique by uid per day
+      if (uid && !stats.daily[today].uvSet.includes(uid)) {
+        stats.daily[today].uvSet.push(uid);
+      }
+
+      // Total UV = all unique uids ever
+      if (!stats.uvAll) stats.uvAll = [];
+      if (uid && !stats.uvAll.includes(uid)) stats.uvAll.push(uid);
+
+      saveStats(stats);
+      return sendJSON(res, 200, { pv: stats.pv, uv: stats.uvAll.length, todayPv: stats.daily[today].pv, todayUv: stats.daily[today].uvSet.length });
+    } catch (e) {
+      return sendJSON(res, 400, { error: e.message });
+    }
+  }
+
+  // GET /api/stats — get current stats
+  if (pathname === '/api/stats' && req.method === 'GET') {
+    const stats = loadStats();
+    const today = new Date().toISOString().slice(0, 10);
+    const d = stats.daily && stats.daily[today] ? stats.daily[today] : { pv: 0, uvSet: [] };
+    return sendJSON(res, 200, {
+      pv: stats.pv || 0,
+      uv: (stats.uvAll || []).length,
+      todayPv: d.pv,
+      todayUv: d.uvSet.length,
+    });
   }
 
   // =================== Static Files ===================

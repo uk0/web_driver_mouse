@@ -274,6 +274,9 @@ body::before {
 .info-msg { display: none; font-family: var(--mono); font-size: .72em; padding: 6px 10px; background: var(--accent-dim); border: 1px solid rgba(68,255,210,.12); border-radius: var(--rs); color: var(--accent); }
 .info-msg.visible { display: block; }
 .footer { text-align: center; padding: 20px 0 4px; font-family: var(--mono); font-size: .64em; color: var(--t3); letter-spacing: .06em; }
+.footer-stats { margin-top: 6px; font-size: 1em; color: var(--t3); display: flex; justify-content: center; gap: 6px; align-items: center; }
+.footer-stats strong { color: var(--accent); font-weight: 600; }
+.footer-sep { opacity: .3; }
 
 /* --- Utilities --- */
 .mt-10 { margin-top: 10px; }

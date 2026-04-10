@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Web Mouse Driver</title>
-  <link rel="stylesheet" href="css/style.css?v=16">
+  <link rel="stylesheet" href="css/style.css?v=17">
 </head>
 <body>
 
@@ -229,15 +229,20 @@
 
   <footer class="footer">
     <div>Web Mouse Driver v2.0 | WebHID | Chrome 89+</div>
+    <div class="footer-stats">
+      <span>Today <strong id="ft-today-uv">-</strong> UV / <strong id="ft-today-pv">-</strong> PV</span>
+      <span class="footer-sep">&middot;</span>
+      <span>Total <strong id="ft-uv">-</strong> UV / <strong id="ft-pv">-</strong> PV</span>
+    </div>
   </footer>
 
 </div>
 
 <!-- ===================== Application Logic ===================== -->
 <script type="module">
-import { RazerProtocol } from './js/protocols/razer-protocol.js?v=16';
-import { LogitechHIDPP } from './js/protocols/logitech-hidpp.js?v=16';
-import { ConfigStore } from './js/config-store.js?v=16';
+import { RazerProtocol } from './js/protocols/razer-protocol.js?v=17';
+import { LogitechHIDPP } from './js/protocols/logitech-hidpp.js?v=17';
+import { ConfigStore } from './js/config-store.js?v=17';
 
 /* ------------------------------------------------------------------
  *  App State
@@ -1200,6 +1205,25 @@ $btnClearLog.addEventListener('click', () => {
 /* ------------------------------------------------------------------
  *  Init — auto-reconnect from cached permissions
  * ---------------------------------------------------------------- */
+// --- UV / PV tracking ---
+(async () => {
+  try {
+    let uid = localStorage.getItem('_mouse_uid');
+    if (!uid) { uid = crypto.randomUUID(); localStorage.setItem('_mouse_uid', uid); }
+    const r = await fetch('/api/stats/hit', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uid }),
+    });
+    if (r.ok) {
+      const s = await r.json();
+      document.getElementById('ft-today-uv').textContent = s.todayUv;
+      document.getElementById('ft-today-pv').textContent = s.todayPv;
+      document.getElementById('ft-uv').textContent = s.uv;
+      document.getElementById('ft-pv').textContent = s.pv;
+    }
+  } catch (_) {}
+})();
+
 if (!navigator.hid) {
   log('当前浏览器不支持 WebHID API，请使用 Chrome 89+ 或 Edge 89+', 'error');
   $btnConnectLogi.disabled = true;
