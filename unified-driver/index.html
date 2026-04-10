@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Web Mouse Driver</title>
-  <link rel="stylesheet" href="css/style.css?v=15">
+  <link rel="stylesheet" href="css/style.css?v=16">
 </head>
 <body>
 
@@ -235,9 +235,9 @@
 
 <!-- ===================== Application Logic ===================== -->
 <script type="module">
-import { RazerProtocol } from './js/protocols/razer-protocol.js?v=15';
-import { LogitechHIDPP } from './js/protocols/logitech-hidpp.js?v=15';
-import { ConfigStore } from './js/config-store.js?v=15';
+import { RazerProtocol } from './js/protocols/razer-protocol.js?v=16';
+import { LogitechHIDPP } from './js/protocols/logitech-hidpp.js?v=16';
+import { ConfigStore } from './js/config-store.js?v=16';
 
 /* ------------------------------------------------------------------
  *  App State
@@ -1198,15 +1198,87 @@ $btnClearLog.addEventListener('click', () => {
 }
 
 /* ------------------------------------------------------------------
- *  Init
+ *  Init — auto-reconnect from cached permissions
  * ---------------------------------------------------------------- */
-// WebHID support check
 if (!navigator.hid) {
   log('当前浏览器不支持 WebHID API，请使用 Chrome 89+ 或 Edge 89+', 'error');
   $btnConnectLogi.disabled = true;
   $btnConnectRazer.disabled = true;
 } else {
   log('WebHID API 可用，准备就绪', 'success');
+
+  // Auto-reconnect: check if any previously authorized devices are available
+  (async () => {
+    try {
+      const cached = await navigator.hid.getDevices();
+      if (cached.length === 0) return;
+
+      const razer = cached.filter(d => d.vendorId === 0x1532);
+      const logi  = cached.filter(d => d.vendorId === 0x046D);
+
+      if (razer.length > 0) {
+        log('检测到已授权的 Razer 设备，自动连接...', 'info');
+        await autoReconnect('razer');
+      } else if (logi.length > 0) {
+        log('检测到已授权的 Logitech 设备，自动连接...', 'info');
+        await autoReconnect('logitech');
+      }
+    } catch (e) {
+      // Silent fail — user can still connect manually
+    }
+  })();
+}
+
+async function autoReconnect(targetBrand) {
+  try {
+    if (targetBrand === 'logitech') {
+      protocol = new LogitechHIDPP();
+    } else {
+      protocol = new RazerProtocol();
+    }
+
+    if (protocol.onLog) {
+      protocol.onLog((msg, type) => log(`[PROTO] ${msg}`, type));
+    }
+
+    const result = await protocol.reconnect();
+    brand = targetBrand;
+    deviceInfo = result.deviceInfo;
+
+    protocol.onInputReport(({ reportId, data }) => {
+      log(`[INPUT] ID=0x${reportId.toString(16).padStart(2,'0')} | ${toHex(data)}`, 'receive');
+    });
+
+    setConnectedUI(true);
+    showDeviceInfo(deviceInfo, brand);
+    updateBrandUI(brand);
+
+    log(`自动连接成功: ${deviceInfo.name} (${vid(deviceInfo.vendorId)}:${vid(deviceInfo.productId)})`, 'success');
+    if (deviceInfo.serialNumber) {
+      log(`序列号: ${deviceInfo.serialNumber}`, 'success');
+    }
+
+    $profileSection.classList.remove('hidden');
+    await refreshProfileList();
+
+    const activeProfile = await configStore.getActiveProfile(deviceInfo);
+    if (activeProfile) {
+      const dev = await configStore.getDevice(deviceInfo);
+      log(`自动应用配置方案 "${dev.activeProfile}"`, 'info');
+      restoreUIFromProfile(activeProfile);
+      $configRestoredMsg.classList.add('visible');
+      await autoApplyConfig(activeProfile);
+    }
+
+    startBatteryPolling();
+
+  } catch (e) {
+    // Auto-reconnect failed silently — device may be off/disconnected
+    log(`自动连接未成功 (${e.message})，请手动连接`, 'info');
+    protocol = null;
+    brand = null;
+    deviceInfo = null;
+  }
 }
 </script>
 

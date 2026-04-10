@@ -112,17 +112,21 @@ export class LogitechHIDPP {
    *
    * @returns {Promise<{device: HIDDevice, deviceInfo: object}>}
    */
+  /** Manual connect — opens browser picker then connects. */
   async connect() {
-    if (!navigator.hid) {
-      throw new Error('WebHID is not supported in this browser. Use Chrome or Edge.');
-    }
+    if (!navigator.hid) throw new Error('WebHID not supported');
+    await navigator.hid.requestDevice({ filters: [{ vendorId: LOGITECH_VID }] });
+    return this._connectFromGranted();
+  }
 
-    // Step 1 -- trigger the browser permission dialog.
-    await navigator.hid.requestDevice({
-      filters: [{ vendorId: LOGITECH_VID }],
-    });
+  /** Auto-reconnect — uses previously granted permissions, no picker. */
+  async reconnect() {
+    if (!navigator.hid) throw new Error('WebHID not supported');
+    return this._connectFromGranted();
+  }
 
-    // Step 2 -- retrieve all granted Logitech devices.
+  /** Shared connect logic. */
+  async _connectFromGranted() {
     const allDevices = await navigator.hid.getDevices();
     const logitechDevices = allDevices.filter(d => d.vendorId === LOGITECH_VID);
 

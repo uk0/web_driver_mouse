@@ -88,12 +88,23 @@ export class RazerProtocol {
 
   /* ======================== Connect ======================== */
 
+  /** Manual connect — opens browser picker then connects. */
   async connect() {
     if (!navigator.hid) throw new Error('WebHID not supported');
-
     _log('Requesting Razer HID device (VID 0x1532)...', 'info');
     await navigator.hid.requestDevice({ filters: [{ vendorId: RAZER_VENDOR_ID }] });
+    return this._connectFromGranted();
+  }
 
+  /** Auto-reconnect — uses previously granted permissions, no picker. */
+  async reconnect() {
+    if (!navigator.hid) throw new Error('WebHID not supported');
+    _log('Checking cached Razer device permissions...', 'info');
+    return this._connectFromGranted();
+  }
+
+  /** Shared connect logic after permissions are granted. */
+  async _connectFromGranted() {
     const all = await navigator.hid.getDevices();
     const razer = all.filter(d => d.vendorId === RAZER_VENDOR_ID);
     _log(`Found ${razer.length} Razer HID interface(s)`, 'info');
