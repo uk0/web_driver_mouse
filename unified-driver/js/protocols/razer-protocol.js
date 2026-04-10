@@ -15,10 +15,24 @@ const STATUS_BUSY    = 0x01;
 const STATUS_SUCCESS = 0x02;
 const STATUS_FAILURE = 0x03;
 
+/* Standard polling rate bitmask (Viper V3 Pro, etc.) */
 const POLLING_RATE_MAP = {
   125:  0x01, 250:  0x02, 500:  0x04, 1000: 0x08,
   2000: 0x10, 4000: 0x20, 8000: 0x40,
 };
+
+/* Reversed polling rate bitmask (Viper V3 HyperSpeed, etc.)
+   These devices interpret the bits in opposite order. */
+const POLLING_RATE_MAP_REV = {
+  125:  0x40, 250:  0x20, 500:  0x10, 1000: 0x08,
+  2000: 0x04, 4000: 0x02, 8000: 0x01,
+};
+
+/* PIDs that use the reversed polling rate mapping */
+const REVERSED_POLLING_PIDS = new Set([
+  0x00BE, // Viper V3 HyperSpeed (Wired)
+  0x00BF, // Viper V3 HyperSpeed (Wireless)
+]);
 
 /* Viper V3 Pro (0x00C0/0x00C1) uses TX 0x1f for all commands */
 const DEFAULT_TX_ID = 0x1F;
@@ -214,10 +228,13 @@ export class RazerProtocol {
   /* ======================== Polling Rate ======================== */
 
   async setPollingRate(rateHz) {
-    const mask = POLLING_RATE_MAP[rateHz];
+    const pid = this._deviceInfo ? this._deviceInfo.productId : 0;
+    const map = REVERSED_POLLING_PIDS.has(pid) ? POLLING_RATE_MAP_REV : POLLING_RATE_MAP;
+    const mask = map[rateHz];
     if (mask === undefined) throw new Error(`Unsupported rate ${rateHz} Hz`);
 
-    _log(`Setting polling rate ${rateHz} Hz (mask=0x${mask.toString(16)})`, 'info');
+    const rev = REVERSED_POLLING_PIDS.has(pid) ? ' [REV]' : '';
+    _log(`Setting polling rate ${rateHz} Hz (mask=0x${mask.toString(16)}${rev} PID=0x${pid.toString(16)})`, 'info');
     const cmd = this._buildBuf(0x00, 0x40, 0x02, [0x01, mask]);
     return this._sendCmd(cmd);
   }

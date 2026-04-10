@@ -289,6 +289,77 @@ body::before {
 .gap-10 { gap: 10px; }
 .hidden { display: none; }
 
+/* --- Mouse Test Area --- */
+.test-area {
+  position: relative;
+  width: 100%; height: 200px;
+  background: var(--s0);
+  border: 1px solid var(--b1);
+  border-radius: var(--rs);
+  overflow: hidden;
+  cursor: crosshair;
+  background-image:
+    radial-gradient(circle, rgba(68,255,210,0.03) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.test-crosshair {
+  position: absolute; width: 20px; height: 20px;
+  pointer-events: none; opacity: 0;
+  transform: translate(-50%, -50%);
+  transition: opacity 0.15s;
+}
+
+.test-crosshair::before,
+.test-crosshair::after {
+  content: ''; position: absolute; background: var(--accent);
+}
+
+.test-crosshair::before {
+  width: 1px; height: 100%; left: 50%; top: 0;
+}
+
+.test-crosshair::after {
+  width: 100%; height: 1px; top: 50%; left: 0;
+}
+
+.test-dot {
+  position: absolute; width: 4px; height: 4px;
+  background: var(--accent);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  box-shadow: 0 0 4px var(--accent-glow);
+}
+
+.test-stats {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 6px; margin-top: 10px;
+}
+
+.test-stat {
+  background: var(--s2); border: 1px solid var(--b0);
+  border-radius: var(--rx); padding: 6px 8px;
+  text-align: center;
+}
+
+.test-label {
+  display: block;
+  font-family: var(--mono); font-size: .55em;
+  color: var(--t3); text-transform: uppercase;
+  letter-spacing: .08em; margin-bottom: 2px;
+}
+
+.test-value {
+  font-family: var(--mono); font-size: .95em;
+  font-weight: 700; color: var(--accent);
+}
+
+.test-unit {
+  font-family: var(--mono); font-size: .55em;
+  color: var(--t3); margin-left: 2px;
+}
+
 /* --- QR Card --- */
 .qr-card { padding: 16px; }
 .qr-layout { display: flex; gap: 14px; align-items: center; }
