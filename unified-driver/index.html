@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Web Mouse Driver</title>
-  <link rel="stylesheet" href="css/style.css?v=9">
+  <link rel="stylesheet" href="css/style.css?v=10">
 </head>
 <body>
 
@@ -167,6 +167,18 @@
         </div>
       </section>
 
+      <!-- QR Code / Feedback Card -->
+      <section class="card qr-card">
+        <div class="qr-layout">
+          <img src="info.jpg" alt="QR Code" class="qr-img">
+          <div class="qr-text">
+            <div class="qr-title">你的鼠标不在支持列表？</div>
+            <div class="qr-desc">扫码关注公众号，提交你的鼠标型号和 VID/PID，我们会逐步适配更多设备。</div>
+            <div class="qr-hint">长按识别 · 关注「你起来我讲两句」</div>
+          </div>
+        </div>
+      </section>
+
     </main>
   </div>
 
@@ -178,9 +190,9 @@
 
 <!-- ===================== Application Logic ===================== -->
 <script type="module">
-import { RazerProtocol } from './js/protocols/razer-protocol.js?v=9';
-import { LogitechHIDPP } from './js/protocols/logitech-hidpp.js?v=9';
-import { ConfigStore } from './js/config-store.js?v=9';
+import { RazerProtocol } from './js/protocols/razer-protocol.js?v=10';
+import { LogitechHIDPP } from './js/protocols/logitech-hidpp.js?v=10';
+import { ConfigStore } from './js/config-store.js?v=10';
 
 /* ------------------------------------------------------------------
  *  App State

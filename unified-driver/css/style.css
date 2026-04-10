@@ -289,6 +289,26 @@ body::before {
 .gap-10 { gap: 10px; }
 .hidden { display: none; }
 
+/* --- QR Card --- */
+.qr-card { padding: 16px; }
+.qr-layout { display: flex; gap: 14px; align-items: center; }
+.qr-img {
+  width: 88px; height: 88px; border-radius: var(--r);
+  border: 1px solid var(--b1); flex-shrink: 0;
+}
+.qr-text { min-width: 0; }
+.qr-title {
+  font-family: var(--mono); font-size: .78em; font-weight: 700;
+  color: var(--accent); margin-bottom: 4px;
+}
+.qr-desc {
+  font-size: .78em; color: var(--t1); line-height: 1.5; margin-bottom: 6px;
+}
+.qr-hint {
+  font-family: var(--mono); font-size: .62em; color: var(--t3);
+  letter-spacing: .04em;
+}
+
 /* --- Animations --- */
 @keyframes fadeUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
 .col-left .card:nth-child(1) { animation: fadeUp .5s var(--ease) both; }
