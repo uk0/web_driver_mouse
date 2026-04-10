@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Web Mouse Driver</title>
-  <link rel="stylesheet" href="css/style.css?v=13">
+  <link rel="stylesheet" href="css/style.css?v=14">
 </head>
 <body>
 
@@ -174,24 +174,40 @@
           <div class="test-crosshair" id="test-crosshair"></div>
           <div class="test-trail" id="test-trail"></div>
         </div>
+        <!-- Hz Sparkline -->
+        <div class="hz-chart">
+          <canvas id="hz-canvas" height="36"></canvas>
+        </div>
+        <!-- Stats Grid -->
         <div class="test-stats">
+          <div class="test-stat stat-primary">
+            <span class="test-label">Polling Rate</span>
+            <span class="test-value" id="test-rate">—</span>
+            <span class="test-unit">Hz</span>
+          </div>
+          <div class="test-stat">
+            <span class="test-label">Peak</span>
+            <span class="test-value" id="test-peak">—</span>
+            <span class="test-unit">Hz</span>
+          </div>
+          <div class="test-stat">
+            <span class="test-label">Jitter</span>
+            <span class="test-value" id="test-jitter">—</span>
+            <span class="test-unit">%</span>
+          </div>
+          <div class="test-stat">
+            <span class="test-label">Interval</span>
+            <span class="test-value" id="test-interval">—</span>
+            <span class="test-unit">&micro;s</span>
+          </div>
           <div class="test-stat">
             <span class="test-label">Speed</span>
             <span class="test-value" id="test-speed">0</span>
             <span class="test-unit">px/s</span>
           </div>
           <div class="test-stat">
-            <span class="test-label">Rate</span>
-            <span class="test-value" id="test-rate">0</span>
-            <span class="test-unit">Hz</span>
-          </div>
-          <div class="test-stat">
-            <span class="test-label">X</span>
-            <span class="test-value" id="test-x">0</span>
-          </div>
-          <div class="test-stat">
-            <span class="test-label">Y</span>
-            <span class="test-value" id="test-y">0</span>
+            <span class="test-label">Position</span>
+            <span class="test-value"><span id="test-x">0</span>,<span id="test-y">0</span></span>
           </div>
         </div>
       </section>
@@ -219,9 +235,9 @@
 
 <!-- ===================== Application Logic ===================== -->
 <script type="module">
-import { RazerProtocol } from './js/protocols/razer-protocol.js?v=13';
-import { LogitechHIDPP } from './js/protocols/logitech-hidpp.js?v=13';
-import { ConfigStore } from './js/config-store.js?v=13';
+import { RazerProtocol } from './js/protocols/razer-protocol.js?v=14';
+import { LogitechHIDPP } from './js/protocols/logitech-hidpp.js?v=14';
+import { ConfigStore } from './js/config-store.js?v=14';
 
 /* ------------------------------------------------------------------
  *  App State
@@ -964,61 +980,175 @@ $btnClearLog.addEventListener('click', () => {
   $logArea.innerHTML = '';
 });
 
-// --- Mouse Test Area (uses getCoalescedEvents for true 8K Hz measurement) ---
+// --- Mouse Test Area — Professional Hz Analysis ---
 {
   const area = document.getElementById('test-area');
   const cross = document.getElementById('test-crosshair');
   const trail = document.getElementById('test-trail');
-  const $speed = document.getElementById('test-speed');
+  const canvas = document.getElementById('hz-canvas');
+  const ctx = canvas.getContext('2d');
   const $rate = document.getElementById('test-rate');
+  const $peak = document.getElementById('test-peak');
+  const $jitter = document.getElementById('test-jitter');
+  const $interval = document.getElementById('test-interval');
+  const $speed = document.getElementById('test-speed');
   const $tx = document.getElementById('test-x');
   const $ty = document.getElementById('test-y');
 
-  let timestamps = [];  // coalesced event timestamps for rate calculation
-  let lastX = 0, lastY = 0, lastT = 0;
-  let speedSmooth = 0;
-  const dots = [];
-  const MAX_DOTS = 50;
+  // Ring buffer for timestamps (coalesced events)
+  const WINDOW_MS = 1000;
+  let tsBuf = [];          // raw timestamps within the last WINDOW_MS
+  let hzHistory = [];      // Hz samples for sparkline (last 60 readings)
+  const HZ_HIST_MAX = 80;
+  let peakHz = 0;
+  let lastX = 0, lastY = 0, lastT = 0, speedSmooth = 0;
+  const dots = []; const MAX_DOTS = 50;
+  let rafId = null;
+
+  function median(arr) {
+    if (arr.length === 0) return 0;
+    const s = [...arr].sort((a, b) => a - b);
+    const mid = Math.floor(s.length / 2);
+    return s.length % 2 !== 0 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+  }
+
+  function calcStats() {
+    const now = performance.now();
+    const cutoff = now - WINDOW_MS;
+    tsBuf = tsBuf.filter(t => t > cutoff);
+
+    if (tsBuf.length < 3) return;
+
+    // Compute intervals between consecutive coalesced events
+    const intervals = [];
+    for (let i = 1; i < tsBuf.length; i++) {
+      intervals.push(tsBuf[i] - tsBuf[i - 1]);
+    }
+
+    // Hz from median interval (robust to outliers)
+    const medInterval = median(intervals);
+    const hz = medInterval > 0 ? Math.round(1000 / medInterval) : 0;
+
+    // Also compute Hz from simple event count (for cross-check)
+    const countHz = tsBuf.length;
+
+    // Use whichever is higher (count method can be more accurate at very high rates)
+    const bestHz = Math.max(hz, countHz);
+
+    // Peak
+    if (bestHz > peakHz) peakHz = bestHz;
+
+    // Jitter: coefficient of variation of intervals (stddev / mean * 100)
+    const mean = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+    const variance = intervals.reduce((a, b) => a + (b - mean) ** 2, 0) / intervals.length;
+    const stddev = Math.sqrt(variance);
+    const jitter = mean > 0 ? (stddev / mean * 100) : 0;
+
+    // Update display
+    $rate.textContent = bestHz;
+    $peak.textContent = peakHz;
+    $jitter.textContent = jitter.toFixed(1);
+    $interval.textContent = Math.round(medInterval * 1000); // ms -> µs
+
+    // Color the rate based on value
+    const rateStat = $rate.closest('.test-stat');
+    if (rateStat) {
+      rateStat.style.borderColor = bestHz >= 4000 ? 'var(--accent)' :
+        bestHz >= 1000 ? 'var(--success)' : 'var(--b1)';
+    }
+
+    // Sparkline history
+    hzHistory.push(bestHz);
+    if (hzHistory.length > HZ_HIST_MAX) hzHistory.shift();
+    drawSparkline();
+  }
+
+  function drawSparkline() {
+    const w = canvas.width = canvas.offsetWidth * 2; // retina
+    const h = canvas.height = 72;
+    ctx.clearRect(0, 0, w, h);
+
+    if (hzHistory.length < 2) return;
+
+    const max = Math.max(...hzHistory, 1000) * 1.1;
+    const step = w / (HZ_HIST_MAX - 1);
+
+    // Fill gradient
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, 'rgba(68, 255, 210, 0.15)');
+    grad.addColorStop(1, 'rgba(68, 255, 210, 0)');
+
+    ctx.beginPath();
+    ctx.moveTo(0, h);
+    for (let i = 0; i < hzHistory.length; i++) {
+      const x = (i + HZ_HIST_MAX - hzHistory.length) * step;
+      const y = h - (hzHistory[i] / max) * (h - 4);
+      if (i === 0) ctx.lineTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.lineTo(w, h);
+    ctx.closePath();
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Line
+    ctx.beginPath();
+    for (let i = 0; i < hzHistory.length; i++) {
+      const x = (i + HZ_HIST_MAX - hzHistory.length) * step;
+      const y = h - (hzHistory[i] / max) * (h - 4);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = '#44ffd2';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Current value dot
+    if (hzHistory.length > 0) {
+      const lastI = hzHistory.length - 1;
+      const lx = (lastI + HZ_HIST_MAX - hzHistory.length) * step;
+      const ly = h - (hzHistory[lastI] / max) * (h - 4);
+      ctx.beginPath();
+      ctx.arc(lx, ly, 3, 0, Math.PI * 2);
+      ctx.fillStyle = '#44ffd2';
+      ctx.fill();
+    }
+  }
+
+  // Stats update at 10fps (decoupled from mouse events for stability)
+  setInterval(calcStats, 100);
 
   area.addEventListener('pointermove', (e) => {
     const rect = area.getBoundingClientRect();
     const t = performance.now();
-
-    // Use getCoalescedEvents() to count raw hardware reports
-    // Each coalesced event = one USB HID report from the mouse
     const coalesced = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
 
+    // Collect all coalesced timestamps
     for (const ce of coalesced) {
-      timestamps.push(ce.timeStamp || t);
+      tsBuf.push(ce.timeStamp || t);
     }
 
-    // Main pointer position (last coalesced event)
+    // Visual: crosshair + trail
     const last = coalesced[coalesced.length - 1] || e;
     const x = last.clientX - rect.left;
     const y = last.clientY - rect.top;
 
-    // Crosshair
     cross.style.left = x + 'px';
     cross.style.top = y + 'px';
     cross.style.opacity = '1';
 
-    // Trail dots — draw one per coalesced event for visual density
     for (const ce of coalesced) {
-      const dx = ce.clientX - rect.left;
-      const dy = ce.clientY - rect.top;
       const dot = document.createElement('div');
       dot.className = 'test-dot';
-      dot.style.left = dx + 'px';
-      dot.style.top = dy + 'px';
+      dot.style.left = (ce.clientX - rect.left) + 'px';
+      dot.style.top = (ce.clientY - rect.top) + 'px';
       trail.appendChild(dot);
-      dots.push({ el: dot, t });
+      dots.push(dot);
     }
-    while (dots.length > MAX_DOTS) {
-      dots.shift().el.remove();
-    }
-    dots.forEach((d, i) => { d.el.style.opacity = (i / dots.length).toFixed(2); });
+    while (dots.length > MAX_DOTS) dots.shift().remove();
+    dots.forEach((d, i) => { d.style.opacity = (0.2 + 0.8 * i / dots.length).toFixed(2); });
 
-    // Speed (px/s)
+    // Speed
     if (lastT > 0) {
       const dt = (t - lastT) / 1000;
       if (dt > 0) {
@@ -1030,13 +1160,6 @@ $btnClearLog.addEventListener('click', () => {
     lastX = x; lastY = y; lastT = t;
     $tx.textContent = Math.round(x);
     $ty.textContent = Math.round(y);
-
-    // Polling rate — count coalesced events in last 1 second
-    const cutoff = t - 1000;
-    timestamps = timestamps.filter(ts => ts > cutoff);
-    if (timestamps.length > 2) {
-      $rate.textContent = timestamps.length;
-    }
   });
 
   area.addEventListener('pointerleave', () => {

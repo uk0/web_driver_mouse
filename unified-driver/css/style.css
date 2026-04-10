@@ -332,32 +332,57 @@ body::before {
   box-shadow: 0 0 4px var(--accent-glow);
 }
 
+.hz-chart {
+  margin-top: 8px;
+  background: var(--s0);
+  border: 1px solid var(--b0);
+  border-radius: var(--rx);
+  overflow: hidden;
+  height: 36px;
+}
+.hz-chart canvas { width: 100%; height: 36px; display: block; }
+
 .test-stats {
-  display: grid; grid-template-columns: repeat(4, 1fr);
-  gap: 6px; margin-top: 10px;
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 5px; margin-top: 8px;
 }
 
 .test-stat {
   background: var(--s2); border: 1px solid var(--b0);
   border-radius: var(--rx); padding: 6px 8px;
   text-align: center;
+  transition: border-color .3s var(--ease);
+}
+
+.test-stat.stat-primary {
+  grid-column: span 3;
+  padding: 10px 8px;
+  border-color: var(--b1);
+}
+
+.stat-primary .test-value {
+  font-size: 1.6em;
+}
+
+.stat-primary .test-label {
+  font-size: .6em; margin-bottom: 4px;
 }
 
 .test-label {
   display: block;
-  font-family: var(--mono); font-size: .55em;
+  font-family: var(--mono); font-size: .52em;
   color: var(--t3); text-transform: uppercase;
-  letter-spacing: .08em; margin-bottom: 2px;
+  letter-spacing: .08em; margin-bottom: 1px;
 }
 
 .test-value {
-  font-family: var(--mono); font-size: .95em;
+  font-family: var(--mono); font-size: .88em;
   font-weight: 700; color: var(--accent);
 }
 
 .test-unit {
-  font-family: var(--mono); font-size: .55em;
-  color: var(--t3); margin-left: 2px;
+  font-family: var(--mono); font-size: .5em;
+  color: var(--t3); margin-left: 1px;
 }
 
 /* --- QR Card --- */
