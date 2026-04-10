@@ -49,8 +49,17 @@ body::before {
 .shell { max-width: 1200px; margin: 0 auto; padding: 16px 20px 32px; }
 
 .header {
-  text-align: center; padding: 18px 0 14px;
+  text-align: center; padding: 18px 0 14px; position: relative;
 }
+.lang-toggle {
+  position: absolute; top: 12px; right: 0;
+  font-family: var(--mono); font-size: .7em; font-weight: 700;
+  color: var(--t2); background: var(--s2); border: 1px solid var(--b1);
+  border-radius: var(--rx); padding: 4px 12px;
+  cursor: pointer; letter-spacing: .04em;
+  transition: all .2s var(--ease); line-height: 1;
+}
+.lang-toggle:hover { border-color: var(--accent); color: var(--accent); }
 .header h1 {
   font-family: var(--mono); font-size: 1.3em; font-weight: 700;
   color: var(--accent); letter-spacing: .08em; text-transform: uppercase;

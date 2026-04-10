@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Web Mouse Driver</title>
-  <link rel="stylesheet" href="css/style.css?v=17">
+  <link rel="stylesheet" href="css/style.css?v=18">
 </head>
 <body>
 
@@ -12,6 +12,7 @@
 
   <!-- ===================== Header ===================== -->
   <header class="header">
+    <button class="lang-toggle" id="btn-lang" title="Language">EN</button>
     <h1>Web Mouse Driver</h1>
     <p class="subtitle">Logitech &amp; Razer | WebHID</p>
   </header>
@@ -23,22 +24,22 @@
     <aside class="col-left">
 
       <section class="card" id="connection-card">
-        <h2>设备连接</h2>
+        <h2 data-i18n="connection">设备连接</h2>
         <div class="status-row">
           <div class="status-dot" id="status-dot"></div>
-          <span class="status-text" id="status-text">未连接</span>
+          <span class="status-text" id="status-text" data-i18n="notConnected">未连接</span>
         </div>
         <div class="btn-group mb-10">
           <button class="btn btn-block" id="btn-connect-logitech">Logitech</button>
           <button class="btn btn-block" id="btn-connect-razer">Razer</button>
         </div>
-        <button class="btn btn-danger btn-block" id="btn-disconnect" disabled>断开</button>
+        <button class="btn btn-danger btn-block" id="btn-disconnect" disabled data-i18n="disconnect">断开</button>
 
         <div class="hidden" id="device-info">
           <div class="section-divider"></div>
           <div class="device-info">
             <div class="info-item">
-              <label>名称</label><span id="info-name">—</span>
+              <label data-i18n="name">名称</label><span id="info-name">—</span>
             </div>
             <div class="info-item">
               <label>VID</label><span id="info-vid">—</span>
@@ -57,21 +58,21 @@
       <!-- Profiles -->
       <section class="card hidden" id="profile-section">
         <div class="flex-between mb-10">
-          <h2 style="margin:0;padding:0;border:none">配置方案</h2>
+          <h2 style="margin:0;padding:0;border:none" data-i18n="profiles">配置方案</h2>
           <div class="flex gap-6">
             <button class="btn btn-sm" id="btn-save-quick" title="一键保存">SAVE</button>
             <button class="btn btn-sm btn-secondary" id="btn-new-profile" title="新建">+</button>
           </div>
         </div>
         <div class="profile-cards" id="profile-cards"></div>
-        <div class="info-msg mt-10" id="config-restored-msg">已自动应用配置方案</div>
+        <div class="info-msg mt-10" id="config-restored-msg" data-i18n="configRestored">已自动应用配置方案</div>
       </section>
 
       <!-- Battery -->
       <section class="card" id="battery-card">
         <div class="flex-between mb-10">
-          <h2 style="margin:0;padding:0;border:none">电池</h2>
-          <button class="btn btn-sm btn-secondary" id="btn-refresh-battery" disabled>刷新</button>
+          <h2 style="margin:0;padding:0;border:none" data-i18n="battery">电池</h2>
+          <button class="btn btn-sm btn-secondary" id="btn-refresh-battery" disabled data-i18n="refresh">刷新</button>
         </div>
         <div class="battery-row">
           <div class="battery-ring" id="battery-ring">
@@ -85,7 +86,7 @@
             <div class="battery-bar-container">
               <div class="battery-bar" id="battery-bar" style="width:0%"></div>
             </div>
-            <div class="text-secondary" id="battery-status" style="font-size:0.78em;margin-top:6px">未知</div>
+            <div class="text-secondary" id="battery-status" style="font-size:0.78em;margin-top:6px" data-i18n="unknown">未知</div>
           </div>
         </div>
       </section>
@@ -93,8 +94,8 @@
       <!-- Log -->
       <section class="card" id="log-card" style="display:none">
         <div class="flex-between mb-10">
-          <h2 style="margin:0;padding:0;border:none">日志</h2>
-          <button class="btn btn-sm btn-secondary" id="btn-clear-log">清除</button>
+          <h2 style="margin:0;padding:0;border:none" data-i18n="log">日志</h2>
+          <button class="btn btn-sm btn-secondary" id="btn-clear-log" data-i18n="clear">清除</button>
         </div>
         <div class="console" id="log-area"></div>
       </section>
@@ -104,7 +105,7 @@
     <main class="col-right">
 
       <section class="card" id="dpi-card">
-        <h2>DPI</h2>
+        <h2 data-i18n="dpi">DPI</h2>
         <div class="dpi-grid mb-10" id="dpi-presets">
           <button class="dpi-btn" data-dpi="400">400</button>
           <button class="dpi-btn" data-dpi="800">800</button>
@@ -113,15 +114,15 @@
           <button class="dpi-btn" data-dpi="6400">6400</button>
         </div>
         <div class="flex gap-10 mb-10" style="align-items:center">
-          <label class="text-secondary" style="white-space:nowrap;font-size:0.82em">自定义</label>
+          <label class="text-secondary" style="white-space:nowrap;font-size:0.82em" data-i18n="custom">自定义</label>
           <input type="number" class="input-field" id="dpi-custom-input" min="100" max="30000" step="50" value="800" placeholder="800" style="max-width:120px">
-          <button class="btn btn-sm" id="btn-apply-dpi" disabled>应用</button>
+          <button class="btn btn-sm" id="btn-apply-dpi" disabled data-i18n="apply">应用</button>
         </div>
         <div id="dpi-xy-controls" class="hidden">
           <div class="section-divider"></div>
           <div class="checkbox-group mb-10">
             <label class="toggle"><input type="checkbox" id="dpi-xy-split-toggle"><span class="toggle-slider"></span></label>
-            <label style="font-size:0.85em">X / Y 分离</label>
+            <label style="font-size:0.85em" data-i18n="xySplit">X / Y 分离</label>
           </div>
           <div id="dpi-xy-sliders">
             <div class="flex gap-10 mb-8" style="align-items:center">
@@ -140,8 +141,8 @@
 
       <section class="card" id="polling-card">
         <div class="flex-between mb-10">
-          <h2 style="margin:0;padding:0;border:none">回报率</h2>
-          <button class="btn btn-sm" id="btn-apply-polling" disabled>应用</button>
+          <h2 style="margin:0;padding:0;border:none" data-i18n="pollingRate">回报率</h2>
+          <button class="btn btn-sm" id="btn-apply-polling" disabled data-i18n="apply">应用</button>
         </div>
         <div class="polling-grid" id="polling-grid">
           <button class="polling-btn" data-rate="125">125</button>
@@ -156,8 +157,8 @@
 
       <section class="card hidden" id="rotation-card">
         <div class="flex-between mb-10">
-          <h2 style="margin:0;padding:0;border:none">旋转角度</h2>
-          <button class="btn btn-sm" id="btn-apply-rotation" disabled>应用</button>
+          <h2 style="margin:0;padding:0;border:none" data-i18n="rotation">旋转角度</h2>
+          <button class="btn btn-sm" id="btn-apply-rotation" disabled data-i18n="apply">应用</button>
         </div>
         <div class="rotation-control">
           <button class="rotation-btn" id="btn-rotation-minus">&minus;</button>
@@ -169,7 +170,7 @@
 
       <!-- Mouse Test Area -->
       <section class="card" id="test-card">
-        <h2>鼠标测试</h2>
+        <h2 data-i18n="mouseTest">鼠标测试</h2>
         <div class="test-area" id="test-area">
           <div class="test-crosshair" id="test-crosshair"></div>
           <div class="test-trail" id="test-trail"></div>
@@ -217,9 +218,9 @@
         <div class="qr-layout">
           <img src="info.jpg?v=2" alt="QR Code" class="qr-img">
           <div class="qr-text">
-            <div class="qr-title">你的鼠标不在支持列表？</div>
-            <div class="qr-desc">扫码关注公众号，提交你的鼠标型号和 VID/PID，我们会逐步适配更多设备。</div>
-            <div class="qr-hint">长按识别 · 关注「你起来我讲两句」</div>
+            <div class="qr-title" data-i18n="qrTitle">你的鼠标不在支持列表？</div>
+            <div class="qr-desc" data-i18n="qrDesc">扫码关注公众号，提交你的鼠标型号和 VID/PID，我们会逐步适配更多设备。</div>
+            <div class="qr-hint" data-i18n="qrHint">长按识别 · 关注「你起来我讲两句」</div>
           </div>
         </div>
       </section>
@@ -240,9 +241,10 @@
 
 <!-- ===================== Application Logic ===================== -->
 <script type="module">
-import { RazerProtocol } from './js/protocols/razer-protocol.js?v=17';
-import { LogitechHIDPP } from './js/protocols/logitech-hidpp.js?v=17';
-import { ConfigStore } from './js/config-store.js?v=17';
+import { RazerProtocol } from './js/protocols/razer-protocol.js?v=18';
+import { LogitechHIDPP } from './js/protocols/logitech-hidpp.js?v=18';
+import { ConfigStore } from './js/config-store.js?v=18';
+import { detectLang, getLang, setLang, t, applyDOM } from './js/i18n.js?v=18';
 
 /* ------------------------------------------------------------------
  *  App State
@@ -339,7 +341,7 @@ function vid(v) {
 
 function setConnectedUI(connected) {
   $statusDot.classList.toggle('connected', connected);
-  $statusText.textContent = connected ? '已连接' : '未连接';
+  $statusText.textContent = connected ? t('connected') : t('notConnected');
   $btnConnectLogi.disabled  = connected;
   $btnConnectRazer.disabled = connected;
   $btnDisconnect.disabled   = !connected;
@@ -576,7 +578,7 @@ function highlightPolling(rate) {
  * ---------------------------------------------------------------- */
 async function connectDevice(targetBrand) {
   try {
-    log(`正在连接 ${targetBrand === 'logitech' ? 'Logitech' : 'Razer'} 鼠标...`, 'info');
+    log(t('logConnecting', { brand: targetBrand === 'logitech' ? 'Logitech' : 'Razer' }), 'info');
 
     if (targetBrand === 'logitech') {
       protocol = new LogitechHIDPP();
@@ -602,11 +604,11 @@ async function connectDevice(targetBrand) {
     showDeviceInfo(deviceInfo, brand);
     updateBrandUI(brand);
 
-    log(`已连接: ${deviceInfo.name} (${vid(deviceInfo.vendorId)}:${vid(deviceInfo.productId)})`, 'success');
+    log(t('logConnected', { name: deviceInfo.name, vid: vid(deviceInfo.vendorId), pid: vid(deviceInfo.productId) }), 'success');
     if (deviceInfo.serialNumber) {
-      log(`序列号: ${deviceInfo.serialNumber}`, 'success');
+      log(t('logSerial', { sn: deviceInfo.serialNumber }), 'success');
     } else {
-      log('序列号: 未获取到', 'info');
+      log(t('logNoSerial'), 'info');
     }
 
     // Show profile section
@@ -1205,6 +1207,19 @@ $btnClearLog.addEventListener('click', () => {
 /* ------------------------------------------------------------------
  *  Init — auto-reconnect from cached permissions
  * ---------------------------------------------------------------- */
+// --- i18n init ---
+detectLang();
+applyDOM();
+const $langBtn = document.getElementById('btn-lang');
+$langBtn.textContent = getLang() === 'zh' ? 'EN' : '中';
+$langBtn.addEventListener('click', () => {
+  const next = getLang() === 'zh' ? 'en' : 'zh';
+  setLang(next);
+  $langBtn.textContent = next === 'zh' ? 'EN' : '中';
+  // Re-apply dynamic text
+  if (!protocol) $statusText.textContent = t('notConnected');
+});
+
 // --- UV / PV tracking ---
 (async () => {
   try {
@@ -1225,11 +1240,11 @@ $btnClearLog.addEventListener('click', () => {
 })();
 
 if (!navigator.hid) {
-  log('当前浏览器不支持 WebHID API，请使用 Chrome 89+ 或 Edge 89+', 'error');
+  log(t('logNoWebHID'), 'error');
   $btnConnectLogi.disabled = true;
   $btnConnectRazer.disabled = true;
 } else {
-  log('WebHID API 可用，准备就绪', 'success');
+  log(t('logReady'), 'success');
 
   // Auto-reconnect: check if any previously authorized devices are available
   (async () => {
