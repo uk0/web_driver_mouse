@@ -68,6 +68,9 @@ const T = {
     batFull:        '已充满',
     batSlowDrain:   '缓慢放电',
     profilePrompt:  '输入配置方案名称:',
+    noProfiles:     '无配置方案 — 点击 + 创建',
+    dblClickRename: '双击重命名',
+    delete:         '删除',
     today:          'Today',
   },
 
@@ -134,6 +137,9 @@ const T = {
     batFull:        'Full',
     batSlowDrain:   'Slow Discharge',
     profilePrompt:  'Enter profile name:',
+    noProfiles:     'No profiles — click + to create',
+    dblClickRename: 'Double-click to rename',
+    delete:         'Delete',
     today:          'Today',
   },
 };

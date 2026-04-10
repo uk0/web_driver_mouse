@@ -60,8 +60,8 @@
         <div class="flex-between mb-10">
           <h2 style="margin:0;padding:0;border:none" data-i18n="profiles">配置方案</h2>
           <div class="flex gap-6">
-            <button class="btn btn-sm" id="btn-save-quick" title="一键保存">SAVE</button>
-            <button class="btn btn-sm btn-secondary" id="btn-new-profile" title="新建">+</button>
+            <button class="btn btn-sm" id="btn-save-quick" data-i18n="saveQuick" data-i18n-attr="title">SAVE</button>
+            <button class="btn btn-sm btn-secondary" id="btn-new-profile" data-i18n="newProfile" data-i18n-attr="title">+</button>
           </div>
         </div>
         <div class="profile-cards" id="profile-cards"></div>
@@ -429,7 +429,7 @@ async function refreshProfileList() {
 
   const names = Object.keys(profiles);
   if (names.length === 0) {
-    $profileCards.innerHTML = '<div class="profile-empty">无配置方案 — 点击 + 创建</div>';
+    $profileCards.innerHTML = `<div class="profile-empty">${t('noProfiles')}</div>`;
     $btnSaveQuick.disabled = true;
     return;
   }
@@ -448,13 +448,13 @@ async function refreshProfileList() {
     const dpiLabel = dpi === dpiY ? dpi : `${dpi}/${dpiY}`;
 
     card.innerHTML = `
-      <div class="pcard-name" title="双击重命名">${name}</div>
+      <div class="pcard-name" title="${t('dblClickRename')}">${name}</div>
       <div class="pcard-stats">
         <span class="pcard-tag">${dpiLabel} DPI</span>
         <span class="pcard-tag">${hz} Hz</span>
       </div>
       ${isActive ? '<div class="pcard-indicator"></div>' : ''}
-      <button class="pcard-del" title="删除">&times;</button>
+      <button class="pcard-del" title="${t('delete')}">&times;</button>
     `;
 
     // Click -> apply this profile
@@ -474,7 +474,7 @@ async function refreshProfileList() {
     card.querySelector('.pcard-del').addEventListener('click', async (e) => {
       e.stopPropagation();
       await configStore.deleteProfile(deviceInfo, name);
-      log(`已删除方案 "${name}"`, 'info');
+      log(t('logProfileDel', { name }), 'info');
       await refreshProfileList();
     });
 
@@ -495,7 +495,7 @@ function startInlineRename(card, oldName, nameEl) {
     const newName = input.value.trim();
     if (newName && newName !== oldName) {
       await configStore.renameProfile(deviceInfo, oldName, newName);
-      log(`方案已重命名: "${oldName}" -> "${newName}"`, 'success');
+      log(t('logProfileRen', { old: oldName, new: newName }), 'success');
     }
     await refreshProfileList();
   };
@@ -514,7 +514,7 @@ async function applyProfileByName(name) {
   await configStore.setActiveProfile(deviceInfo, name);
   activeProfileName = name;
   restoreUIFromProfile(profile);
-  log(`正在应用方案 "${name}"...`, 'info');
+  log(t('logApplying', { name }), 'info');
   await autoApplyConfig(profile);
   await refreshProfileList();
 }
@@ -619,7 +619,7 @@ async function connectDevice(targetBrand) {
     const activeProfile = await configStore.getActiveProfile(deviceInfo);
     if (activeProfile) {
       const dev = await configStore.getDevice(deviceInfo);
-      log(`检测到配置方案 "${dev.activeProfile}"，正在自动应用...`, 'info');
+      log(t('logConfigFound', { name: dev.activeProfile }), 'info');
       restoreUIFromProfile(activeProfile);
       $configRestoredMsg.classList.add('visible');
       await autoApplyConfig(activeProfile);
@@ -629,7 +629,7 @@ async function connectDevice(targetBrand) {
     startBatteryPolling();
 
   } catch (err) {
-    log(`连接失败: ${err.message}`, 'error');
+    log(`Connect failed: ${err.message}`, 'error');
     protocol = null;
     brand = null;
     deviceInfo = null;
@@ -641,9 +641,9 @@ async function disconnectDevice() {
   if (!protocol) return;
   try {
     await protocol.disconnect();
-    log('已断开连接', 'info');
+    log(t('logDisconnected'), 'info');
   } catch (err) {
-    log(`断开失败: ${err.message}`, 'error');
+    log(`Disconnect failed: ${err.message}`, 'error');
   }
   setConnectedUI(false);
   updateBrandUI(null);
@@ -657,9 +657,9 @@ async function applyDPI() {
   try {
     if (brand === 'logitech') {
       const dpi = parseInt($dpiCustomInput.value) || 800;
-      log(`设置 DPI: ${dpi}`, 'send');
+      log(t('logSetDpi', { v: dpi }), 'send');
       await protocol.setDPI(dpi);
-      log(`DPI 已设置为 ${dpi}`, 'success');
+      log(t('logDpiOk', { v: dpi }), 'success');
       await configStore.updateActive(deviceInfo, { dpiX: dpi, dpiY: dpi });
     } else {
       // Razer: use XY if split enabled
@@ -671,14 +671,14 @@ async function applyDPI() {
         dpiX = parseInt($dpiXInput.value) || parseInt($dpiCustomInput.value) || 800;
         dpiY = dpiX;
       }
-      log(`设置 DPI: X=${dpiX}, Y=${dpiY}`, 'send');
+      log(t('logSetDpi', { v: `X=${dpiX}, Y=${dpiY}` }), 'send');
       await protocol.setDPI(dpiX, dpiY);
-      log(`DPI 已设置为 X=${dpiX}, Y=${dpiY}`, 'success');
+      log(t('logDpiOk', { v: `X=${dpiX}, Y=${dpiY}` }), 'success');
       await configStore.updateActive(deviceInfo, { dpiX, dpiY });
     }
     await refreshProfileList();
   } catch (err) {
-    log(`DPI 设置失败: ${err.message}`, 'error');
+    log(`DPI failed: ${err.message}`, 'error');
   }
 }
 
@@ -688,13 +688,13 @@ async function applyDPI() {
 async function applyPollingRate() {
   if (!protocol || !selectedPollingRate) return;
   try {
-    log(`设置回报率: ${selectedPollingRate} Hz`, 'send');
+    log(t('logSetRate', { v: selectedPollingRate }), 'send');
     await protocol.setPollingRate(selectedPollingRate);
-    log(`回报率已设置为 ${selectedPollingRate} Hz`, 'success');
+    log(t('logRateOk', { v: selectedPollingRate }), 'success');
     await configStore.updateActive(deviceInfo, { pollingRate: selectedPollingRate });
     await refreshProfileList();
   } catch (err) {
-    log(`回报率设置失败: ${err.message}`, 'error');
+    log(`Polling rate failed: ${err.message}`, 'error');
   }
 }
 
@@ -707,7 +707,7 @@ const MAX_BATTERY_RETRIES = 3;
 async function refreshBattery(silent = false) {
   if (!protocol || !protocol.isConnected()) return false;
   try {
-    if (!silent) log('查询电池状态...', 'send');
+    if (!silent) log(t('logBatQuery'), 'send');
     const bat = await protocol.getBattery();
 
     const pct = bat.level;
@@ -723,23 +723,23 @@ async function refreshBattery(silent = false) {
     $batteryPercent.textContent = pct + '%';
     $batteryPercent.style.color = pct <= 20 ? 'var(--danger)' : pct <= 50 ? 'var(--warning)' : 'var(--success)';
 
-    let statusStr = bat.charging ? '充电中' : '未充电';
+    let statusStr = bat.charging ? t('charging') : t('notCharging');
     if (brand === 'logitech' && bat.status) {
       const statusMap = {
-        'Discharging': '放电中', 'Charging': '充电中',
-        'Nearly Full': '即将充满', 'Full': '已充满', 'Slow Discharge': '缓慢放电',
+        'Discharging': t('batDischarging'), 'Charging': t('batCharging'),
+        'Nearly Full': t('batNearlyFull'), 'Full': t('batFull'), 'Slow Discharge': t('batSlowDrain'),
       };
       statusStr = statusMap[bat.status] || bat.status;
     }
-    $batteryStatus.innerHTML = `状态：${bat.charging
+    $batteryStatus.innerHTML = bat.charging
       ? '<span class="text-success">' + statusStr + '</span>'
-      : statusStr}`;
+      : statusStr;
 
-    if (!silent) log(`电池: ${pct}% | ${statusStr}`, 'success');
+    if (!silent) log(t('logBatOk', { pct, status: statusStr }), 'success');
     _batteryRetries = 0;
     return true;
   } catch (err) {
-    if (!silent) log(`电池查询失败: ${err.message}`, 'error');
+    if (!silent) log(`Battery failed: ${err.message}`, 'error');
     return false;
   }
 }
@@ -752,34 +752,34 @@ async function autoApplyConfig(settings) {
     // Apply DPI
     if (settings.dpiX) {
       if (brand === 'logitech') {
-        log(`自动应用 DPI: ${settings.dpiX}`, 'send');
+        log(t('logApplyDpi', { v: settings.dpiX }), 'send');
         await protocol.setDPI(settings.dpiX);
-        log(`DPI 已应用: ${settings.dpiX}`, 'success');
+        log(t('logDpiOk', { v: settings.dpiX }), 'success');
       } else {
         const dy = settings.dpiY || settings.dpiX;
-        log(`自动应用 DPI: X=${settings.dpiX} Y=${dy}`, 'send');
+        log(t('logApplyDpi', { v: `X=${settings.dpiX} Y=${dy}` }), 'send');
         await protocol.setDPI(settings.dpiX, dy);
-        log(`DPI 已应用: X=${settings.dpiX} Y=${dy}`, 'success');
+        log(t('logDpiOk', { v: `X=${settings.dpiX} Y=${dy}` }), 'success');
       }
     }
 
     // Apply polling rate
     if (settings.pollingRate) {
-      log(`自动应用回报率: ${settings.pollingRate} Hz`, 'send');
+      log(t('logApplyRate', { v: settings.pollingRate }), 'send');
       await protocol.setPollingRate(settings.pollingRate);
-      log(`回报率已应用: ${settings.pollingRate} Hz`, 'success');
+      log(t('logRateOk', { v: settings.pollingRate }), 'success');
     }
 
     // Apply rotation (Razer only)
     if (brand === 'razer' && settings.rotation !== undefined && settings.rotation !== 0) {
-      log(`自动应用旋转角度: ${settings.rotation}\u00B0`, 'send');
+      log(t('logApplyRot', { v: settings.rotation }), 'send');
       await protocol.setRotation(settings.rotation);
-      log(`旋转角度已应用: ${settings.rotation}\u00B0`, 'success');
+      log(t('logRotOk', { v: settings.rotation }), 'success');
     }
 
-    log('保存的配置已全部应用', 'success');
+    log(t('logConfigDone'), 'success');
   } catch (err) {
-    log(`自动应用配置失败: ${err.message}`, 'error');
+    log(`Config apply failed: ${err.message}`, 'error');
   }
 }
 
@@ -798,7 +798,7 @@ function startBatteryPolling() {
     let ok = await refreshBattery();
     if (!ok) {
       for (let i = 1; i <= MAX_BATTERY_RETRIES; i++) {
-        log(`电池查询重试 (${i}/${MAX_BATTERY_RETRIES})...`, 'info');
+        log(t('logBatRetry', { i, max: MAX_BATTERY_RETRIES }), 'info');
         await new Promise(r => setTimeout(r, BATTERY_RETRY_MS));
         if (!protocol || !protocol.isConnected()) return;
         ok = await refreshBattery();
@@ -822,7 +822,7 @@ function startBatteryPolling() {
       }
     }, BATTERY_POLL_MS);
 
-    log(`电量自动刷新已启动 (${BATTERY_POLL_MS / 1000}s)`, 'info');
+    log(t('logBatPoll', { s: BATTERY_POLL_MS / 1000 }), 'info');
   }, BATTERY_INIT_DELAY);
 }
 
@@ -840,13 +840,13 @@ async function applyRotation() {
   if (!protocol || brand !== 'razer') return;
   try {
     const angle = parseInt($rotationSlider.value) || 0;
-    log(`设置旋转角度: ${angle}\u00B0`, 'send');
+    log(t('logSetRot', { v: angle }), 'send');
     await protocol.setRotation(angle);
-    log(`旋转角度已设置为 ${angle}\u00B0`, 'success');
+    log(t('logRotOk', { v: angle }), 'success');
     await configStore.updateActive(deviceInfo, { rotation: angle });
     await refreshProfileList();
   } catch (err) {
-    log(`旋转角度设置失败: ${err.message}`, 'error');
+    log(`Rotation failed: ${err.message}`, 'error');
   }
 }
 
@@ -984,7 +984,7 @@ $btnNewProfile.addEventListener('click', async () => {
   await configStore.saveProfile(deviceInfo, name, settings);
   await configStore.setActiveProfile(deviceInfo, name);
   activeProfileName = name;
-  log(`已创建方案 "${name}"`, 'success');
+  log(t('logProfileNew', { name }), 'success');
   await refreshProfileList();
 
   // Auto start inline rename on the new card
@@ -999,7 +999,7 @@ $btnSaveQuick.addEventListener('click', async () => {
   if (!deviceInfo || !activeProfileName) return;
   const settings = getCurrentSettings();
   await configStore.saveProfile(deviceInfo, activeProfileName, settings);
-  log(`已保存到方案 "${activeProfileName}"`, 'success');
+  log(t('logProfileSave', { name: activeProfileName }), 'success');
 
   // Flash feedback
   $btnSaveQuick.textContent = 'SAVED';
@@ -1256,10 +1256,10 @@ if (!navigator.hid) {
       const logi  = cached.filter(d => d.vendorId === 0x046D);
 
       if (razer.length > 0) {
-        log('检测到已授权的 Razer 设备，自动连接...', 'info');
+        log(t('logAutoConnect', { brand: 'Razer' }), 'info');
         await autoReconnect('razer');
       } else if (logi.length > 0) {
-        log('检测到已授权的 Logitech 设备，自动连接...', 'info');
+        log(t('logAutoConnect', { brand: 'Logitech' }), 'info');
         await autoReconnect('logitech');
       }
     } catch (e) {
@@ -1292,7 +1292,7 @@ async function autoReconnect(targetBrand) {
     showDeviceInfo(deviceInfo, brand);
     updateBrandUI(brand);
 
-    log(`自动连接成功: ${deviceInfo.name} (${vid(deviceInfo.vendorId)}:${vid(deviceInfo.productId)})`, 'success');
+    log(t('logAutoOk', { name: deviceInfo.name, vid: vid(deviceInfo.vendorId), pid: vid(deviceInfo.productId) }), 'success');
     if (deviceInfo.serialNumber) {
       log(`序列号: ${deviceInfo.serialNumber}`, 'success');
     }
@@ -1303,7 +1303,7 @@ async function autoReconnect(targetBrand) {
     const activeProfile = await configStore.getActiveProfile(deviceInfo);
     if (activeProfile) {
       const dev = await configStore.getDevice(deviceInfo);
-      log(`自动应用配置方案 "${dev.activeProfile}"`, 'info');
+      log(t('logConfigFound', { name: dev.activeProfile }), 'info');
       restoreUIFromProfile(activeProfile);
       $configRestoredMsg.classList.add('visible');
       await autoApplyConfig(activeProfile);
@@ -1313,7 +1313,7 @@ async function autoReconnect(targetBrand) {
 
   } catch (e) {
     // Auto-reconnect failed silently — device may be off/disconnected
-    log(`自动连接未成功 (${e.message})，请手动连接`, 'info');
+    log(t('logAutoFail', { err: e.message }), 'info');
     protocol = null;
     brand = null;
     deviceInfo = null;
